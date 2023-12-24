@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+
+OS_NAME="$(uname -s)"
+case "${OS_NAME}" in
+    Darwin*)
+        realpath() {
+            [[ $1 = /* ]] && echo "$1" || echo "${PWD}/${1#./}"
+        }
+    ;;
+esac
+
+
+SCRIPT_DIR=$(realpath "$(dirname "${0}")")
+ARGS=(-v)
+
+usage() {
+cat << EOF
+Run e2e tests.
+
+Usage:
+    ${0} [OPTIONS] [EXTRA_ARGS]
+
+All the EXTRA_ARGS are passed to pytest
+
+Options:
+    --debug-sh  Set bash 'x' option
+    --help      Show help message
+EOF
+}
+
+# set -eux
+
+while [ "${#}" -gt 0 ]; do
+    case "${1}" in
+        -h|--help)
+            usage
+            exit
+            ;;
+
+        --debug-sh)
+            set -x
+            ;;
+
+        *)
+            ARGS+=("${1}")
+            ;;
+    esac
+    
+   shift
+done
+
+set -eEu
+
+# ARTIFACTS_DIR="${SCRIPT_DIR}/.artifacts"
+E2E_CONTAINER=e2e-test-instance
+
+remove_container() {
+    docker compose rm --stop --force --volumes
+
+    if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
+        # mkdir -p "${ARTIFACTS_DIR}"
+        docker stop "${E2E_CONTAINER}"
+        # set +e
+        # docker cp "${E2E_CONTAINER}":/test/sut/sut.log "${ARTIFACTS_DIR}"
+        # set -e
+        docker rm --force "${E2E_CONTAINER}"
+    fi
+}
+
+on_exit() {
+    remove_container
+}
+
+on_error() {
+    remove_container
+}
+
+trap on_exit EXIT
+trap 'on_error ${?} ${LINENO}' ERR
+
+echo -e "\e[36mRunning e2e tests...\e[0m"
+
+E2E_TESTS_DIR="${SCRIPT_DIR}/e2e-tests"
+
+# if [ -n "${PYTHON+x}" ]; then
+#     E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/python.Dockerfile"
+#     ARGS+=(--python)
+# elif [ -n "${RUST+x}" ]; then
+#     E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/rust.Dockerfile"
+#     ARGS+=(--rust)
+# else
+#     E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/python.Dockerfile"
+#     ARGS+=(--python)
+# fi
+
+
+# if [ -n "${DEBUG+x}" ]; then
+#     docker build --build-arg "BUILD_OPT=" -t dns-relay-e2e-test:latest -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
+# else
+#     docker build -t dns-relay-e2e-test:latest -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
+# fi
+
+E2E_IMAGE=e2e-test
+E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/e2e-tests.Dockerfile"
+
+pushd "${SCRIPT_DIR}"
+
+docker build -t "${E2E_IMAGE}:latest" -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
+docker compose up -d
+# rm -rf "${ARTIFACTS_DIR}"
+docker run --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"
+
+popd
