@@ -52,8 +52,8 @@ done
 
 set -eEu
 
-# ARTIFACTS_DIR="${SCRIPT_DIR}/.artifacts"
 E2E_CONTAINER=e2e-test-instance
+# VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
 
 remove_container() {
     docker compose rm --stop --force --volumes
@@ -82,33 +82,14 @@ trap 'on_error ${?} ${LINENO}' ERR
 echo -e "\e[36mRunning e2e tests...\e[0m"
 
 E2E_TESTS_DIR="${SCRIPT_DIR}/e2e-tests"
-
-# if [ -n "${PYTHON+x}" ]; then
-#     E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/python.Dockerfile"
-#     ARGS+=(--python)
-# elif [ -n "${RUST+x}" ]; then
-#     E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/rust.Dockerfile"
-#     ARGS+=(--rust)
-# else
-#     E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/python.Dockerfile"
-#     ARGS+=(--python)
-# fi
-
-
-# if [ -n "${DEBUG+x}" ]; then
-#     docker build --build-arg "BUILD_OPT=" -t dns-relay-e2e-test:latest -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
-# else
-#     docker build -t dns-relay-e2e-test:latest -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
-# fi
-
 E2E_IMAGE=e2e-test
 E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/e2e-tests.Dockerfile"
 
 pushd "${SCRIPT_DIR}"
 
 docker build -t "${E2E_IMAGE}:latest" -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
+docker compose build
 docker compose up -d
-# rm -rf "${ARTIFACTS_DIR}"
 docker run --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"
 
 popd

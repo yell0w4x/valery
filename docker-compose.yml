@@ -7,8 +7,8 @@ services:
     restart: always
     ports:
       - 127.0.0.1:${MONGODB_PORT:-27017}:${MONGODB_PORT:-27017}
-    volumes:
-      - ${MONGODB_PATH:-./.volumes/mongodb}:/data/db
+    # volumes:
+    #   - ${MONGODB_PATH:-./.volumes/mongodb}:/data/db
     # TODO: add auth
 
   valery:
