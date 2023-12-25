@@ -1,3 +1,5 @@
+from repository import Dialog
+
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -90,44 +92,44 @@ class Bot:
 
     @contextmanager
     def __task_man(self, user_id, message, message_history, chat_mode):
-        task = asyncio.create_task(self.__message_handler_task(message, message_history, chat_mode))
+        task = asyncio.create_task(self.__message_handler_task(
+            self.__repo.get_user(user_id), message, message_history, chat_mode))
         tasks = self.__tasks
         tasks[user_id] = task
         try:
             yield task
         finally:
             if user_id in tasks:
-                del tasks[tg_user.id]
+                del tasks[user_id]
 
 
     async def __message_handler(self, update: Update, context: CallbackContext):
         tg_user = update.message.from_user
-        self.__register_user(tg_user)
+        user = self.__register_user(tg_user)
 
         message = update.message.text
-        user = self.__repo.get_user(tg_user.id)
+        _logger.debug(f'Message arrived [{message}]')
 
-        async with self.__tasks[tg_user.id]:
+        async with self.__locks[tg_user.id]:
             with self.__task_man(tg_user.id, message, user.current_dialog, 'english_tutor') as task:
                 try:
-                    await task
+                    resp = await task
+                    await update.message.reply_text(resp)
                 except asyncio.CancelledError:
                     await update.message.reply_text("✅ Canceled", parse_mode=ParseMode.HTML)
+                except BaseException as e:
+                    error_text = f"Something went wrong during completion. Reason: [{e}]"
+                    _logger.error(error_text, exc_info=e)
+                    await update.message.reply_text(error_text)
 
 
-    async def __message_handler_task(self, message, message_history, chat_mode):
-        try:
-            assistant = self.__assistant_factory()
-            resp, usage = await assistant.send_message()
-        except asyncio.CancelledError:
-            # note: intermediate token updates only work when enable_message_streaming=True (config.yml)
-            # db.update_n_used_tokens(user_id, current_model, n_input_tokens, n_output_tokens)
-            raise
-        except BaseException as e:
-            error_text = f"Something went wrong during completion. Reason: [{e}]"
-            _logger.error(error_text)
-            await update.message.reply_text(error_text)
-            return
+    async def __message_handler_task(self, user, message, message_history, chat_mode):
+        assistant = self.__assistant_factory()
+        resp, usage = await assistant.send_message(message, message_history, chat_mode)
+        user.current_dialog.append(Dialog(role='user', content=message))
+        user.current_dialog.append(Dialog(role='assistant', content=resp))
+        self.__repo.put_user(user)
+        return resp
 
 
     def __register_user(self, tg_user):
@@ -135,7 +137,7 @@ class Bot:
             self.__locks[tg_user.id] = asyncio.Semaphore()
 
         now_utc = datetime.now(tz=timezone.utc)
-        repo = user = self.__repo
+        repo = self.__repo
         user = repo.get_user(tg_user.id)
         user.last_seen = now_utc
         if user.first_seen is None:
@@ -146,6 +148,7 @@ class Bot:
             user.last_name= tg_user.last_name
 
         repo.put_user(user)
+        return user
 
 
     async def __post_init(self, app):

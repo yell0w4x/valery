@@ -48,6 +48,19 @@ async def test_start_command_must_create_new_user(telegram_client):
     User.objects.get(username='yell0w4x')
 
 
+@pytest.mark.anyio
+async def test_must_response_to_user_message(telegram_client):
+    await telegram_client.send_message(VALERY_BOT_CHAT_ID, 'Hi there')
+
+    loop = asyncio.get_running_loop()
+    message_arrived = loop.create_future()
+    async def on_message(client, message):
+        message_arrived.set_result(message)
+
+    telegram_client.on_message(filters.all)(on_message)
+    message = await message_arrived
+    assert message.text.startswith('Hello!') or message.text.startswith('Greetings!')
+
 
 # async def message_waiting_task():
 #     loop = asyncio.get_running_loop()
