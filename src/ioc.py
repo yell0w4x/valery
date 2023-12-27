@@ -20,7 +20,8 @@ class Container(DeclarativeContainer):
                             base_url=config.anyscale_base_url)
 
     assistant = Factory(Assistant, client=openai_client, config=config)
-    bot = Singleton(Bot, 
+    bot = Singleton(Bot,
+                    config=config, 
                     telegram_app_builder=tg_app_builder, 
                     telegram_token=config.telegram_token, 
                     repository=repo,
