@@ -27,10 +27,10 @@ from contextlib import contextmanager
 
 
 HELP_MESSAGE = """Commands:
-⚪ /new – Start new dialog
-⚪ /mode – Select chat mode
-⚪ /settings – Show settings
-⚪ /help – Show help
+👉 /new – Start new dialog
+👉 /mode – Select chat mode
+👉 /settings – Show settings
+👉 /help – Show help
 
 🎨 Generate images from text prompts in <b>👩‍🎨 Artist</b> /mode
 👥 Add bot to <b>group chat</b>: /help_group_chat
@@ -77,9 +77,16 @@ class Bot:
         app.add_handler(CallbackQueryHandler(self.__show_chat_modes_callback_handler, pattern="^show_chat_modes"))
         app.add_handler(CallbackQueryHandler(self.__set_chat_mode_handler, pattern="^set_chat_mode"))
 
+        app.add_handler(CommandHandler("new", self.__new_dialog_handler, filters=filters.COMMAND))
+        app.add_handler(MessageHandler(filters.VOICE, self.__voice_message_handler))
+
 
     def run(self):
         self.__app.run_polling()
+
+
+    async def __voice_message_handler(self, update: Update, context: CallbackContext):
+        pass
 
 
     async def __start_handler(self, update: Update, context: CallbackContext):
@@ -88,10 +95,20 @@ class Bot:
         self.__register_user(tg_user)
 
         reply_text = "Hi there! Pleased to meet you! Feel free to choose preset or supply your own 🤖\n\n"
-        # reply_text += HELP_MESSAGE
+        reply_text += HELP_MESSAGE
 
         await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
-        # await show_chat_modes_handle(update, context)
+        await self.__show_chat_modes_handler(update, context)
+
+
+    async def __new_dialog_handler(self, update: Update, context: CallbackContext):
+        # if await is_previous_message_not_answered_yet(update, context): return
+        user = self.__register_user(update.message.from_user)
+        user.current_dialog = list()
+        self.__repo.put_user(user)
+        await update.message.reply_text('Starting new dialog...')
+        welcome_message = self.__config['chat_modes'][user.chat_mode]['welcome_message']
+        await update.message.reply_text(welcome_message, parse_mode=ParseMode.HTML)
 
 
     async def __message_handler(self, update: Update, context: CallbackContext):

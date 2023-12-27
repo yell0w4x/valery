@@ -32,7 +32,16 @@ def mongo_connect():
     db.drop_database('valery')
 
 
-VALERY_BOT_CHAT_ID = '@ValeryAIBot'
+@pytest.fixture
+def chatbot_id():
+    VALERY_BOT_CHAT_ID = '@ValeryAIBot'
+    return VALERY_BOT_CHAT_ID
+
+
+@pytest.fixture
+def user_id():
+    USER_ID = 'yell0w4x'
+    return USER_ID
 
 
 async def wait_for_message(telegram_client):
@@ -48,20 +57,20 @@ async def wait_for_message(telegram_client):
 
 
 @pytest.mark.anyio
-async def test_start_command_must_create_new_user(telegram_client):
-    await telegram_client.send_message(VALERY_BOT_CHAT_ID, '/start')
+async def test_start_command_must_create_new_user(telegram_client, chatbot_id, user_id):
+    await telegram_client.send_message(chatbot_id, '/start')
     message = await wait_for_message(telegram_client)
     assert message.text.startswith('Hi there! Pleased to meet you!')
-    User.objects.get(username='yell0w4x')
+    User.objects.get(username=user_id)
 
 
 @pytest.mark.anyio
-async def test_must_response_to_user_message(telegram_client):
-    await telegram_client.send_message(VALERY_BOT_CHAT_ID, 'Hi there')
+async def test_must_response_to_user_message(telegram_client, chatbot_id):
+    await telegram_client.send_message(chatbot_id, 'Hi there')
 
     message = await wait_for_message(telegram_client)
     while message.text == '...':
-        async for message in telegram_client.get_chat_history(VALERY_BOT_CHAT_ID, limit=1):
+        async for message in telegram_client.get_chat_history(chatbot_id, limit=1):
             if message.text != '...':
                 break
             await asyncio.sleep(1)
@@ -70,14 +79,28 @@ async def test_must_response_to_user_message(telegram_client):
 
 
 @pytest.mark.anyio
-async def test_must_show_available_chat_modes_and_select_chat_mode(telegram_client):
-    await telegram_client.send_message(VALERY_BOT_CHAT_ID, '/mode')
+async def test_must_show_available_chat_modes_and_select_chat_mode(telegram_client, chatbot_id, user_id):
+    await telegram_client.send_message(chatbot_id, '/mode')
     message = await wait_for_message(telegram_client)
     assert message.text.startswith('Select chat mode')
 
     await telegram_client.request_callback_answer(
         chat_id=message.chat.id, message_id=message.id, callback_data='set_chat_mode|code_assistant')
-    user = User.objects.get(username='yell0w4x')
+    user = User.objects.get(username=user_id)
     message = await wait_for_message(telegram_client)
-    assert message.text.startswith("👩🏼‍💻 Hi, I'm")
+    assert message.text.startswith("👩🏼‍💻 Hi, I'm Code Assistant")
     assert user.chat_mode == 'code_assistant'   
+
+
+@pytest.mark.anyio
+async def test_new_dialog_command(telegram_client, chatbot_id, user_id):
+    await telegram_client.send_message(chatbot_id, 'Hi there')
+    message = await wait_for_message(telegram_client)
+    user = User.objects.get(username=user_id)
+    assert len(user.current_dialog)
+
+    await telegram_client.send_message(chatbot_id, '/new')
+    message = await wait_for_message(telegram_client)
+    assert message.text.startswith('Starting new dialog')
+    user = User.objects.get(username=user_id)
+    assert len(user.current_dialog) == 0

@@ -61,11 +61,20 @@ E2E_CONTAINER=e2e-test-instance
 # VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
 
 remove_container() {
+    if [ -n "${REMOVED+x}" ]; then
+        return
+    fi
+
+    REMOVED=1
     if [ -n "${LEAVE_DB+x}" ]; then
         docker compose rm --stop --force
     else 
         docker compose rm --stop --force --volumes
-        docker volume rm --force $(docker volume ls -q | grep valery-data --color=never)
+
+        VOLUME="$(docker volume ls -q | grep valery-data --color=never)"
+        if [ -n "${VOLUME}" ]; then
+            docker volume rm --force "${VOLUME}"
+        fi
     fi 
 
     if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
