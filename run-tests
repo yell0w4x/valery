@@ -25,6 +25,7 @@ All the EXTRA_ARGS are passed to pytest
 
 Options:
     --debug-sh  Set bash 'x' option
+    --leave-db  Do not remove database on exit
     --help      Show help message
 EOF
 }
@@ -42,6 +43,10 @@ while [ "${#}" -gt 0 ]; do
             set -x
             ;;
 
+        --leave-db)
+            LEAVE_DB=1
+            ;;
+
         *)
             ARGS+=("${1}")
             ;;
@@ -56,7 +61,12 @@ E2E_CONTAINER=e2e-test-instance
 # VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
 
 remove_container() {
-    docker compose rm --stop --force --volumes
+    if [ -n "${LEAVE_DB+x}" ]; then
+        docker compose rm --stop --force
+    else 
+        docker compose rm --stop --force --volumes
+        docker volume rm --force $(docker volume ls -q | grep valery-data --color=never)
+    fi 
 
     if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
         # mkdir -p "${ARTIFACTS_DIR}"

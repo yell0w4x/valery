@@ -6,10 +6,10 @@ RUN cd /tmp && wget https://github.com/Yelp/dumb-init/releases/download/v1.2.5/d
 RUN apt-get install /tmp/dumb-init_1.2.5_amd64.deb
 
 WORKDIR /app
-COPY config /config/
 COPY src/requirements.txt /app/requirements.txt
 RUN pip install -r requirements.txt
 COPY src /app/
+COPY config /config/
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["python", "-u", "/app/main.py"]

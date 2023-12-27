@@ -1,6 +1,7 @@
 import mongoengine
 # from pyromod import listen, Client as PyromodClient
 from pyrogram import Client, filters
+from pyrogram.handlers import MessageHandler
 import pytest
 import time
 import asyncio
@@ -27,23 +28,29 @@ async def telegram_client(session_name):
 
 @pytest.fixture(autouse=True)
 def mongo_connect():
-    mongoengine.connect(host='mongodb://mongo:27017/valery?uuidRepresentation=standard')
+    db = mongoengine.connect(host='mongodb://mongo:27017/valery?uuidRepresentation=standard')
+    db.drop_database('valery')
 
 
 VALERY_BOT_CHAT_ID = '@ValeryAIBot'
 
 
-@pytest.mark.anyio
-async def test_start_command_must_create_new_user(telegram_client):
-    await telegram_client.send_message(VALERY_BOT_CHAT_ID, '/start')
-
+async def wait_for_message(telegram_client):
     loop = asyncio.get_running_loop()
     message_arrived = loop.create_future()
     async def on_message(client, message):
         message_arrived.set_result(message)
 
-    telegram_client.on_message(filters.all)(on_message)
+    handler = telegram_client.add_handler(MessageHandler(on_message))
     message = await message_arrived
+    telegram_client.remove_handler(*handler)
+    return message
+
+
+@pytest.mark.anyio
+async def test_start_command_must_create_new_user(telegram_client):
+    await telegram_client.send_message(VALERY_BOT_CHAT_ID, '/start')
+    message = await wait_for_message(telegram_client)
     assert message.text.startswith('Hi there! Pleased to meet you!')
     User.objects.get(username='yell0w4x')
 
@@ -52,27 +59,25 @@ async def test_start_command_must_create_new_user(telegram_client):
 async def test_must_response_to_user_message(telegram_client):
     await telegram_client.send_message(VALERY_BOT_CHAT_ID, 'Hi there')
 
-    loop = asyncio.get_running_loop()
-    message_arrived = loop.create_future()
-    async def on_message(client, message):
-        message_arrived.set_result(message)
+    message = await wait_for_message(telegram_client)
+    while message.text == '...':
+        async for message in telegram_client.get_chat_history(VALERY_BOT_CHAT_ID, limit=1):
+            if message.text != '...':
+                break
+            await asyncio.sleep(1)
 
-    telegram_client.on_message(filters.all)(on_message)
-    message = await message_arrived
     assert message.text.startswith('Hello!') or message.text.startswith('Greetings!')
 
 
-# async def message_waiting_task():
-#     loop = asyncio.get_running_loop()
-#     message_arrived = loop.create_future()
-#     async def on_message(client, message):
-#         message_arrived.set_result(message)
+@pytest.mark.anyio
+async def test_must_show_available_chat_modes_and_select_chat_mode(telegram_client):
+    await telegram_client.send_message(VALERY_BOT_CHAT_ID, '/mode')
+    message = await wait_for_message(telegram_client)
+    assert message.text.startswith('Select chat mode')
 
-#     telegram_client.on_message(filters.all)(on_message)
-#     response = await message_arrived
-#     print(response)
-
-# async def message_sending_task():
-#     await telegram_client.send_message(VALERY_BOT_CHAT_ID, '/start')
-
-# await asyncio.gather(message_waiting_task(), message_sending_task())
+    await telegram_client.request_callback_answer(
+        chat_id=message.chat.id, message_id=message.id, callback_data='set_chat_mode|code_assistant')
+    user = User.objects.get(username='yell0w4x')
+    message = await wait_for_message(telegram_client)
+    assert message.text.startswith("👩🏼‍💻 Hi, I'm")
+    assert user.chat_mode == 'code_assistant'   

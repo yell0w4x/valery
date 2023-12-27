@@ -1,5 +1,8 @@
 version: "3"
 
+volumes:
+  valery-data:
+
 services:
   mongo:
     container_name: mongo
@@ -7,8 +10,9 @@ services:
     restart: always
     ports:
       - 127.0.0.1:${MONGODB_PORT:-27017}:${MONGODB_PORT:-27017}
-    # volumes:
-    #   - ${MONGODB_PATH:-./.volumes/mongodb}:/data/db
+    volumes:
+      - valery-data:/data/db
+      # - ${MONGODB_PATH:-./.volumes/mongodb}:/data/db
     # TODO: add auth
 
   valery:

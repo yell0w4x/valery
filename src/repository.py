@@ -25,7 +25,7 @@ class User(Document):
     last_name = StringField()
     first_seen = DateField()
     last_seen = DateField()
-    chat_mode = StringField()
+    chat_mode = StringField(default='english_tutor')
     current_dialog = ListField(EmbeddedDocumentField(Dialog))
 
 
