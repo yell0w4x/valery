@@ -79,7 +79,7 @@ async def test_must_response_to_user_message(telegram_client, chatbot_id):
 
 
 @pytest.mark.anyio
-async def test_must_show_available_chat_modes_and_select_chat_mode(telegram_client, chatbot_id, user_id):
+async def test_must_show_available_chat_modes_then_select_code_assistant_chat_mode_and_ask_to_write_code(telegram_client, chatbot_id, user_id):
     await telegram_client.send_message(chatbot_id, '/mode')
     message = await wait_for_message(telegram_client)
     assert message.text.startswith('Select chat mode')
@@ -89,7 +89,11 @@ async def test_must_show_available_chat_modes_and_select_chat_mode(telegram_clie
     user = User.objects.get(username=user_id)
     message = await wait_for_message(telegram_client)
     assert message.text.startswith("👩🏼‍💻 Hi, I'm Code Assistant")
-    assert user.chat_mode == 'code_assistant'   
+    assert user.chat_mode == 'code_assistant'
+
+    await telegram_client.send_message(chatbot_id, 'Write smallest python example code')
+    message = await wait_for_message(telegram_client)
+    assert not message.text.startswith('Something went wrong')
 
 
 @pytest.mark.anyio

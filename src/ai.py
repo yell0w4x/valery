@@ -44,15 +44,13 @@ class Assistant:
             **self.COMPLETION_OPTIONS
         )
 
-        answer = ''
         async for item in gen:
             _logger.debug(f'{item=}')
             delta = item.choices[0].delta
             if hasattr(delta, 'content') and delta.content is not None:
-                answer += delta.content
-                # n_input_tokens, n_output_tokens = self._count_tokens_from_messages(messages, answer, model=self.model)
-                # n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
-                yield answer
+                yield delta.content
+                # # n_input_tokens, n_output_tokens = self._count_tokens_from_messages(messages, answer, model=self.model)
+                # # n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
         else:
             yield None
 
