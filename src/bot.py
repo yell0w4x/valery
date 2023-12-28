@@ -29,7 +29,6 @@ from contextlib import contextmanager
 HELP_MESSAGE = """Commands:
 👉 /new – Start new dialog
 👉 /mode – Select chat mode
-👉 /settings – Show settings
 👉 /help – Show help
 
 🎨 Generate images from text prompts in <b>👩‍🎨 Artist</b> /mode
@@ -161,6 +160,11 @@ class Bot:
 
 
     async def __message_handler_task(self, user, message, message_history, chat_mode):
+        def put_dialog_item(user, message, response):
+            user.current_dialog.append(Dialog(role='user', content=message.text))
+            user.current_dialog.append(Dialog(role='assistant', content=response))
+            self.__repo.put_user(user)
+
         assistant = self.__assistant_factory()
         config = self.__config
         parse_mode = self.__parse_mode(chat_mode)
@@ -176,11 +180,17 @@ class Bot:
             whole_answer = ''
             async for answer in assistant.send_message_stream(message.text, message_history, chat_mode):
                 limit = config['stream_update_chars']
-                whole_answer += escape_markdown(answer) if is_markdown else answer
+
+                if answer is not None:
+                    whole_answer += escape_markdown(answer) if is_markdown else answer
+
                 if answer is not None and abs(len(whole_answer) - len(prev_answer)) < limit:
                     continue
 
-                _logger.info(f'{prev_answer=}, {placeholder_message=}, {parse_mode=}')
+                if answer is None:
+                    put_dialog_item(user, message, whole_answer)
+
+                _logger.debug(f'{prev_answer=}, {placeholder_message=}, {parse_mode=}')
                 try:
                     await self.__app.bot.edit_message_text(whole_answer, 
                                                            chat_id=placeholder_message.chat_id, 
@@ -201,11 +211,9 @@ class Bot:
         else:
             await message.reply_chat_action(action=ChatAction.TYPING)
             resp, usage = await assistant.send_message(message.text, message_history, chat_mode)
-            user.current_dialog.append(Dialog(role='user', content=message.text))
-            user.current_dialog.append(Dialog(role='assistant', content=resp))
-            self.__repo.put_user(user)
+            put_dialog_item(user, message, resp)
 
-            _logger.info(f'{resp=}, {parse_mode=}')
+            _logger.debug(f'{resp=}, {parse_mode=}')
             if is_markdown:
                 resp = escape_markdown(resp)
 
@@ -320,6 +328,6 @@ class Bot:
         await app.bot.set_my_commands([
             BotCommand("/new", "Start new dialog"),
             BotCommand("/mode", "Select chat mode"),
-            BotCommand("/settings", "Show settings"),
+            # BotCommand("/settings", "Show settings"),
             BotCommand("/help", "Show help message"),
         ])

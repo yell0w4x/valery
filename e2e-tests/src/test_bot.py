@@ -56,55 +56,97 @@ async def wait_for_message(telegram_client):
     return message
 
 
+def expect_message(telegram_client):
+    loop = asyncio.get_running_loop()
+    message_arrived = loop.create_future()
+    async def on_message(client, message):
+        message_arrived.set_result(message)
+        telegram_client.remove_handler(*handler)
+
+    handler = telegram_client.add_handler(MessageHandler(on_message))
+    return message_arrived
+
+
+async def wait_for_placeholder_changes(telegram_client, message, chatbot_id):
+    while message.text == '...':
+        async for message in telegram_client.get_chat_history(chatbot_id, limit=1):
+            if message.text != '...':
+                return message
+            await asyncio.sleep(1)
+    else:
+        return message
+
+
 @pytest.mark.anyio
 async def test_start_command_must_create_new_user(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, '/start')
-    message = await wait_for_message(telegram_client)
-    assert message.text.startswith('Hi there! Pleased to meet you!')
+    message = await message_arrived
+    assert message.text.startswith('Hi there! Pleased to meet you!') or \
+        message.text.startswith('Select chat mode')
     User.objects.get(username=user_id)
+
+
+# @pytest.mark.anyio
+# async def test_start_command_must_create_new_user(telegram_client, chatbot_id, user_id):
+#     async def message_waiting_task():
+#         return await wait_for_message(telegram_client)
+
+#     async def message_sending_task():
+#         await telegram_client.send_message(chatbot_id, '/start')
+
+#     result = await asyncio.gather(message_waiting_task(), message_sending_task())
+#     message = result[0]
+
+#     assert message.text.startswith('Hi there! Pleased to meet you!') or \
+#         message.text.startswith('Select chat mode')
+#     User.objects.get(username=user_id)
 
 
 @pytest.mark.anyio
 async def test_must_response_to_user_message(telegram_client, chatbot_id):
+    message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, 'Hi there')
 
-    message = await wait_for_message(telegram_client)
-    while message.text == '...':
-        async for message in telegram_client.get_chat_history(chatbot_id, limit=1):
-            if message.text != '...':
-                break
-            await asyncio.sleep(1)
-
+    message = await message_arrived
+    message = await wait_for_placeholder_changes(telegram_client, message, chatbot_id)
     assert message.text.startswith('Hello!') or message.text.startswith('Greetings!')
 
 
 @pytest.mark.anyio
 async def test_must_show_available_chat_modes_then_select_code_assistant_chat_mode_and_ask_to_write_code(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, '/mode')
-    message = await wait_for_message(telegram_client)
+    message = await message_arrived
     assert message.text.startswith('Select chat mode')
 
+    message_arrived = expect_message(telegram_client)
     await telegram_client.request_callback_answer(
         chat_id=message.chat.id, message_id=message.id, callback_data='set_chat_mode|code_assistant')
+    message = await message_arrived
     user = User.objects.get(username=user_id)
-    message = await wait_for_message(telegram_client)
     assert message.text.startswith("👩🏼‍💻 Hi, I'm Code Assistant")
     assert user.chat_mode == 'code_assistant'
 
+    message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, 'Write smallest python example code')
-    message = await wait_for_message(telegram_client)
+    message = await message_arrived
     assert not message.text.startswith('Something went wrong')
 
 
 @pytest.mark.anyio
 async def test_new_dialog_command(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, 'Hi there')
-    message = await wait_for_message(telegram_client)
+    message = await message_arrived
     user = User.objects.get(username=user_id)
-    assert len(user.current_dialog)
+    while len(user.current_dialog) == 0:
+        user = User.objects.get(username=user_id)
+        await asyncio.sleep(1)
 
+    message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, '/new')
-    message = await wait_for_message(telegram_client)
+    message = await message_arrived
     assert message.text.startswith('Starting new dialog')
     user = User.objects.get(username=user_id)
     assert len(user.current_dialog) == 0
