@@ -52,6 +52,16 @@ For example: "{bot_username} write a poem about Telegram"
 _logger = logging.getLogger(__name__)
 
 
+def escape_markdown(text):
+    # SPECIAL_CHARS = '\\', '_', '*', '[', ']', '(', ')', '~', '`', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+    SPECIAL_CHARS = '\\', '[', ']', '(', ')', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+
+    for char in SPECIAL_CHARS:
+        text = text.replace(char, f'\\{char}')
+
+    return text
+
+
 class Bot:
     def __init__(self, config, telegram_app_builder, telegram_token, repository, assistant_factory):
         _logger.debug(f'Creating bot [{telegram_token=}]')
@@ -142,47 +152,64 @@ class Bot:
                 del tasks[user_id]
 
 
+    def __parse_mode(self, chat_mode):
+        config = self.__config
+        return dict(html=ParseMode.HTML, 
+                    markdown=ParseMode.MARKDOWN,
+                    markdown_v2=ParseMode.MARKDOWN_V2).get(config['chat_modes'][chat_mode]['parse_mode'], 
+                                                           ParseMode.HTML)
+
+
     async def __message_handler_task(self, user, message, message_history, chat_mode):
         assistant = self.__assistant_factory()
         config = self.__config
-        if config['message_streaming']:
+        parse_mode = self.__parse_mode(chat_mode)
+        is_markdown = parse_mode.lower().startswith('markdown')
+        # can't stream markdown as telegram fails with parsing errors because of 
+        # it unable to find closing pair of starting markup symbol
+        is_code_assistant = chat_mode == 'code_assistant'
+
+        if config['message_streaming'] and not is_code_assistant:
             placeholder_message = await message.reply_text('...')
             await message.reply_chat_action(action=ChatAction.TYPING)
-            parse_mode = dict(html=ParseMode.HTML, 
-                              markdown=ParseMode.MARKDOWN).get(config['chat_modes'][chat_mode]['parse_mode'], 
-                                                               ParseMode.HTML)
-                        
             prev_answer = ''
+            whole_answer = ''
             async for answer in assistant.send_message_stream(message.text, message_history, chat_mode):
                 limit = config['stream_update_chars']
-                if answer is not None and abs(len(answer) - len(prev_answer)) < limit:
+                whole_answer += escape_markdown(answer) if is_markdown else answer
+                if answer is not None and abs(len(whole_answer) - len(prev_answer)) < limit:
                     continue
 
-                if answer is not None:
-                    prev_answer = answer
-
+                _logger.info(f'{prev_answer=}, {placeholder_message=}, {parse_mode=}')
                 try:
-                    await self.__app.bot.edit_message_text(prev_answer, 
+                    await self.__app.bot.edit_message_text(whole_answer, 
                                                            chat_id=placeholder_message.chat_id, 
                                                            message_id=placeholder_message.message_id, 
                                                            parse_mode=parse_mode)
                 except telegram.error.BadRequest as e:
+                    _logger.warn(f'BadRequest [{e}]')
                     if str(e).startswith("Message is not modified"):
                         continue
                     else:
-                        await self.__app.bot.edit_message_text(prev_answer, 
-                                                                chat_id=placeholder_message.chat_id, 
-                                                                message_id=placeholder_message.message_id, 
-                                                                parse_mode=parse_mode)
+                        await self.__app.bot.edit_message_text(whole_answer, 
+                                                               chat_id=placeholder_message.chat_id, 
+                                                               message_id=placeholder_message.message_id, 
+                                                               parse_mode=parse_mode)
 
                 await asyncio.sleep(0.01)
+                prev_answer = whole_answer
         else:
-            await message.reply_chat_action(action=telegram.constants.ChatAction.TYPING)
+            await message.reply_chat_action(action=ChatAction.TYPING)
             resp, usage = await assistant.send_message(message.text, message_history, chat_mode)
             user.current_dialog.append(Dialog(role='user', content=message.text))
             user.current_dialog.append(Dialog(role='assistant', content=resp))
             self.__repo.put_user(user)
-            await message.reply_text(resp)
+
+            _logger.info(f'{resp=}, {parse_mode=}')
+            if is_markdown:
+                resp = escape_markdown(resp)
+
+            await message.reply_text(resp, parse_mode=parse_mode)
 
 
     def __register_user(self, tg_user):
