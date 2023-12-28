@@ -20,10 +20,13 @@ from telegram import (
 )
 import telegram
 
+from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+
 from datetime import datetime, timezone
 import logging
 import asyncio
 from contextlib import contextmanager
+from io import BytesIO
 
 
 HELP_MESSAGE = """Commands:
@@ -61,6 +64,18 @@ def escape_markdown(text):
     return text
 
 
+async def transcribe_audio(api_key, buffer):
+    deepgram = DeepgramClient(api_key)
+    options = PrerecordedOptions(
+        model="nova-2",
+        smart_format=True,
+        language='en'
+        # summarize="v2",
+    )
+    payload = dict(buffer=buffer)
+    return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options)
+
+
 class Bot:
     def __init__(self, config, telegram_app_builder, telegram_token, repository, assistant_factory):
         _logger.debug(f'Creating bot [{telegram_token=}]')
@@ -95,7 +110,23 @@ class Bot:
 
 
     async def __voice_message_handler(self, update: Update, context: CallbackContext):
-        pass
+        self.__register_user(update.message.from_user)
+
+        voice = update.message.voice
+        voice_file = await context.bot.get_file(voice.file_id)
+        
+        buf = BytesIO()
+        await voice_file.download_to_memory(buf)
+        buf.name = "voice.oga"  # file extension is required
+        buf.seek(0)
+
+        response = await transcribe_audio(self.__config['deepgram_token'], buf)
+        _logger.debug(f'Voice transcription [{response}]')
+        text = str(response.results.channels[0].alternatives[0].transcript)
+        transcript = response.results.channels[0].alternatives[0].transcript
+        _logger.info(f'{text=} {transcript=!r} {response=!r}')
+        await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
+        await self.__message_handler(update, context, alt_text=text)
 
 
     async def __start_handler(self, update: Update, context: CallbackContext):
@@ -120,14 +151,14 @@ class Bot:
         await update.message.reply_text(welcome_message, parse_mode=ParseMode.HTML)
 
 
-    async def __message_handler(self, update: Update, context: CallbackContext):
+    async def __message_handler(self, update: Update, context: CallbackContext, alt_text=None):
         tg_user = update.message.from_user
         user = self.__register_user(tg_user)
 
-        _logger.debug(f'Message arrived [{update.message.text}]')
+        _logger.debug(f'Message arrived [{alt_text or update.message.text}]')
 
         async with self.__locks[tg_user.id]:
-            with self.__task_man(tg_user.id, update.message, user.current_dialog, user.chat_mode) as task:
+            with self.__task_man(tg_user.id, update.message, user.current_dialog, user.chat_mode, alt_text) as task:
                 try:
                     await task
                 except asyncio.CancelledError:
@@ -139,9 +170,9 @@ class Bot:
 
 
     @contextmanager
-    def __task_man(self, user_id, message, message_history, chat_mode):
+    def __task_man(self, user_id, message, message_history, chat_mode, alt_text):
         task = asyncio.create_task(self.__message_handler_task(
-            self.__repo.get_user(user_id), message, message_history, chat_mode))
+            self.__repo.get_user(user_id), message, message_history, chat_mode, alt_text))
         tasks = self.__tasks
         tasks[user_id] = task
         try:
@@ -159,7 +190,7 @@ class Bot:
                                                            ParseMode.HTML)
 
 
-    async def __message_handler_task(self, user, message, message_history, chat_mode):
+    async def __message_handler_task(self, user, message, message_history, chat_mode, alt_text):
         def put_dialog_item(user, message, response):
             user.current_dialog.append(Dialog(role='user', content=message.text))
             user.current_dialog.append(Dialog(role='assistant', content=response))
@@ -172,13 +203,14 @@ class Bot:
         # can't stream markdown as telegram fails with parsing errors because of 
         # it unable to find closing pair of starting markup symbol
         is_code_assistant = chat_mode == 'code_assistant'
+        message_text = alt_text or message.text
 
         if config['message_streaming'] and not is_code_assistant:
             placeholder_message = await message.reply_text('...')
             await message.reply_chat_action(action=ChatAction.TYPING)
             prev_answer = ''
             whole_answer = ''
-            async for answer in assistant.send_message_stream(message.text, message_history, chat_mode):
+            async for answer in assistant.send_message_stream(message_text, message_history, chat_mode):
                 limit = config['stream_update_chars']
 
                 if answer is not None:
@@ -210,7 +242,7 @@ class Bot:
                 prev_answer = whole_answer
         else:
             await message.reply_chat_action(action=ChatAction.TYPING)
-            resp, usage = await assistant.send_message(message.text, message_history, chat_mode)
+            resp, usage = await assistant.send_message(message_text, message_history, chat_mode)
             put_dialog_item(user, message, resp)
 
             _logger.debug(f'{resp=}, {parse_mode=}')
