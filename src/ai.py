@@ -21,6 +21,7 @@ class Assistant:
 
 
     async def send_message(self, message, message_history, chat_mode):
+        _logger.info(f'{message=}')
         client = self.__client
         reply = await client.chat.completions.create(
             model='meta-llama/Llama-2-70b-chat-hf', 

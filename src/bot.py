@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 from telegram.constants import ParseMode, ChatAction
 from telegram import (
+    Message,
     Update,
     User,
     InlineKeyboardButton,
@@ -27,6 +28,7 @@ import logging
 import asyncio
 from contextlib import contextmanager
 from io import BytesIO
+from functools import wraps
 
 
 HELP_MESSAGE = """Commands:
@@ -67,13 +69,28 @@ def escape_markdown(text):
 async def transcribe_audio(api_key, buffer):
     deepgram = DeepgramClient(api_key)
     options = PrerecordedOptions(
-        model="nova-2",
+        # model="nova-2",
+        model='whisper-medium',
         smart_format=True,
         language='en'
         # summarize="v2",
     )
     payload = dict(buffer=buffer)
     return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options)
+
+
+def pending_protect(method):
+    @wraps(method)
+    async def wrapper(self, update, *args, **kwargs):
+        if not isinstance(update, Update):
+            raise ValueError('The first arg of protected callable must have an Update type')
+
+        if await self._is_reply_pending(update):
+            return
+
+        await method(self, update, *args, **kwargs)
+
+    return wrapper
 
 
 class Bot:
@@ -109,6 +126,7 @@ class Bot:
         self.__app.run_polling()
 
 
+    @pending_protect
     async def __voice_message_handler(self, update: Update, context: CallbackContext):
         self.__register_user(update.message.from_user)
 
@@ -123,15 +141,13 @@ class Bot:
         response = await transcribe_audio(self.__config['deepgram_token'], buf)
         _logger.debug(f'Voice transcription [{response}]')
         text = str(response.results.channels[0].alternatives[0].transcript)
-        transcript = response.results.channels[0].alternatives[0].transcript
-        _logger.info(f'{text=} {transcript=!r} {response=!r}')
         await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
         await self.__message_handler(update, context, alt_text=text)
 
 
+    @pending_protect
     async def __start_handler(self, update: Update, context: CallbackContext):
         tg_user = update.message.from_user
-        _logger.debug(f'/start command arrived [{tg_user=}]')
         self.__register_user(tg_user)
 
         reply_text = "Hi there! Pleased to meet you! Feel free to choose preset or supply your own 🤖\n\n"
@@ -141,8 +157,8 @@ class Bot:
         await self.__show_chat_modes_handler(update, context)
 
 
+    @pending_protect
     async def __new_dialog_handler(self, update: Update, context: CallbackContext):
-        # if await is_previous_message_not_answered_yet(update, context): return
         user = self.__register_user(update.message.from_user)
         user.current_dialog = list()
         self.__repo.put_user(user)
@@ -151,6 +167,7 @@ class Bot:
         await update.message.reply_text(welcome_message, parse_mode=ParseMode.HTML)
 
 
+    @pending_protect
     async def __message_handler(self, update: Update, context: CallbackContext, alt_text=None):
         tg_user = update.message.from_user
         user = self.__register_user(tg_user)
@@ -191,8 +208,8 @@ class Bot:
 
 
     async def __message_handler_task(self, user, message, message_history, chat_mode, alt_text):
-        def put_dialog_item(user, message, response):
-            user.current_dialog.append(Dialog(role='user', content=message.text))
+        def put_dialog_item(user, message_text, response):
+            user.current_dialog.append(Dialog(role='user', content=message_text))
             user.current_dialog.append(Dialog(role='assistant', content=response))
             self.__repo.put_user(user)
 
@@ -204,6 +221,7 @@ class Bot:
         # it unable to find closing pair of starting markup symbol
         is_code_assistant = chat_mode == 'code_assistant'
         message_text = alt_text or message.text
+        # message_text = message.text
 
         if config['message_streaming'] and not is_code_assistant:
             placeholder_message = await message.reply_text('...')
@@ -220,7 +238,7 @@ class Bot:
                     continue
 
                 if answer is None:
-                    put_dialog_item(user, message, whole_answer)
+                    put_dialog_item(user, message_text, whole_answer)
 
                 _logger.debug(f'{prev_answer=}, {placeholder_message=}, {parse_mode=}')
                 try:
@@ -242,8 +260,9 @@ class Bot:
                 prev_answer = whole_answer
         else:
             await message.reply_chat_action(action=ChatAction.TYPING)
+            _logger.info(f'{repr(message_text)}, {message_text=!r}, {type(message_text)}')
             resp, usage = await assistant.send_message(message_text, message_history, chat_mode)
-            put_dialog_item(user, message, resp)
+            put_dialog_item(user, message_text, resp)
 
             _logger.debug(f'{resp=}, {parse_mode=}')
             if is_markdown:
@@ -271,17 +290,17 @@ class Bot:
         return user
 
 
+    @pending_protect
     async def __show_chat_modes_handler(self, update: Update, context: CallbackContext):
         self.__register_user(update.message.from_user)
-        # if await is_previous_message_not_answered_yet(update, context): return
         text, reply_markup = self.__get_chat_mode_menu()
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 
+    @pending_protect
     async def __show_chat_modes_callback_handler(self, update: Update, context: CallbackContext):
         query = update.callback_query
         self.__register_user(query.from_user)
-        # if await is_previous_message_not_answered_yet(update.callback_query, context): return
 
         await query.answer()
 
@@ -296,6 +315,7 @@ class Bot:
             _logger.error(f'Edit message error [{e!r}]')
 
 
+    @pending_protect
     async def __set_chat_mode_handler(self, update: Update, context: CallbackContext):
         query = update.callback_query
         user = self.__register_user(query.from_user)
@@ -354,12 +374,30 @@ class Bot:
         return text, reply_markup
 
 
+    async def _is_reply_pending(self, update: Update):
+        is_message = hasattr(update, 'message') and isinstance(update.message, Message)
+        message = update.message if is_message else update.callback_query.message
+        user = update.message.from_user if is_message else update.callback_query.from_user
+        self.__register_user(user)
+
+        if self.__locks[user.id].locked():
+            if not is_message:
+                await update.callback_query.answer()
+
+            text = "⏳ Please <b>wait</b> for a reply to the previous message\nOr you can /cancel it"
+            await message.reply_text(text, reply_to_message_id=message.id, parse_mode=ParseMode.HTML)
+            return True
+
+        return False
+
+
     async def __post_init(self, app):
         _logger.info(f'Bot started')
 
         await app.bot.set_my_commands([
             BotCommand("/new", "Start new dialog"),
             BotCommand("/mode", "Select chat mode"),
+            BotCommand("/cancel", "Pending reply"),
             # BotCommand("/settings", "Show settings"),
             BotCommand("/help", "Show help message"),
         ])
