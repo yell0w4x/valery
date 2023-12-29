@@ -150,3 +150,49 @@ async def test_new_dialog_command(telegram_client, chatbot_id, user_id):
     assert message.text.startswith('Starting new dialog')
     user = User.objects.get(username=user_id)
     assert len(user.current_dialog) == 0
+
+
+@pytest.mark.anyio
+async def test_unable_to_send_two_messages_in_a_row_without_getting_reply_to_first_one(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, 'Hi there!')
+    await telegram_client.send_message(chatbot_id, 'How are you?')
+    message = await message_arrived
+    assert 'Please wait for a reply' in message.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('command', ['/start', '/new', '/mode'])
+async def test_unable_to_send_command_if_message_reply_pending(telegram_client, chatbot_id, user_id, command):
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, 'Hi there!')
+    await telegram_client.send_message(chatbot_id, command)
+    message = await message_arrived
+    assert 'Please wait for a reply' in message.text
+    message = await wait_for_message(telegram_client)
+
+
+@pytest.mark.anyio
+async def test_must_forbid_to_select_chat_mode_if_message_pending(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, '/mode')
+    message_reply = await message_arrived
+    assert message_reply.text.startswith('Select chat mode')
+
+    hi_reply_expect = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, 'Hi there!')
+    await telegram_client.request_callback_answer(
+        chat_id=message_reply.chat.id, message_id=message_reply.id, callback_data='set_chat_mode|code_assistant')
+    message = await hi_reply_expect
+    assert 'Please wait for a reply' in message.text
+    message = await wait_for_message(telegram_client)
+
+
+@pytest.mark.anyio
+async def test_voice(telegram_client: Client, chatbot_id, user_id):
+    with open('hi-there.oga', 'rb') as f:
+        print(type(f), f.name)
+        message_arrived = expect_message(telegram_client)
+        await telegram_client.send_voice(chatbot_id, voice=f)
+        message = await message_arrived
+        assert 'Hi there' in message.text
