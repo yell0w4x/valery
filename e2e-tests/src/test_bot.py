@@ -34,7 +34,7 @@ def mongo_connect():
 
 @pytest.fixture
 def chatbot_id():
-    VALERY_BOT_CHAT_ID = '@ValeryAIBot'
+    VALERY_BOT_CHAT_ID = '@ValeryAITestBot'
     return VALERY_BOT_CHAT_ID
 
 
@@ -87,20 +87,13 @@ async def test_start_command_must_create_new_user(telegram_client, chatbot_id, u
     User.objects.get(username=user_id)
 
 
-# @pytest.mark.anyio
-# async def test_start_command_must_create_new_user(telegram_client, chatbot_id, user_id):
-#     async def message_waiting_task():
-#         return await wait_for_message(telegram_client)
-
-#     async def message_sending_task():
-#         await telegram_client.send_message(chatbot_id, '/start')
-
-#     result = await asyncio.gather(message_waiting_task(), message_sending_task())
-#     message = result[0]
-
-#     assert message.text.startswith('Hi there! Pleased to meet you!') or \
-#         message.text.startswith('Select chat mode')
-#     User.objects.get(username=user_id)
+@pytest.mark.anyio
+async def test_help_command(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, '/help')
+    message = await message_arrived
+    assert '👉 /start – Get started' in message.text
+    User.objects.get(username=user_id)
 
 
 @pytest.mark.anyio

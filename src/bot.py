@@ -32,12 +32,12 @@ from functools import wraps
 
 
 HELP_MESSAGE = """Commands:
+👉 /start – Get started
 👉 /new – Start new dialog
 👉 /mode – Select chat mode
+👉 /cancel – Cancel pending reply 
 👉 /help – Show help
 
-🎨 Generate images from text prompts in <b>👩‍🎨 Artist</b> /mode
-👥 Add bot to <b>group chat</b>: /help_group_chat
 🎤 You can send <b>Voice Messages</b> instead of text
 """
 
@@ -121,6 +121,8 @@ class Bot:
         app.add_handler(CommandHandler("new", self.__new_dialog_handler, filters=filters.COMMAND))
         app.add_handler(MessageHandler(filters.VOICE, self.__voice_message_handler))
 
+        app.add_handler(CommandHandler("help", self.__help_handler, filters=filters.COMMAND))
+
 
     def run(self):
         self.__app.run_polling()
@@ -155,6 +157,13 @@ class Bot:
 
         await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
         await self.__show_chat_modes_handler(update, context)
+
+
+    @pending_protect
+    async def __help_handler(self, update: Update, context: CallbackContext):
+        tg_user = update.message.from_user
+        self.__register_user(tg_user)
+        await update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.HTML)
 
 
     @pending_protect
@@ -395,9 +404,10 @@ class Bot:
         _logger.info(f'Bot started')
 
         await app.bot.set_my_commands([
+            BotCommand("/start", "Get started"),
             BotCommand("/new", "Start new dialog"),
             BotCommand("/mode", "Select chat mode"),
-            BotCommand("/cancel", "Pending reply"),
+            BotCommand("/cancel", "Cancel pending reply"),
             # BotCommand("/settings", "Show settings"),
             BotCommand("/help", "Show help message"),
         ])
