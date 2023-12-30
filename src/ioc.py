@@ -23,7 +23,6 @@ class Container(DeclarativeContainer):
     bot = Singleton(Bot,
                     config=config, 
                     telegram_app_builder=tg_app_builder, 
-                    telegram_token=config.telegram_token, 
                     repository=repo,
                     assistant_factory=assistant.provider)
     app_service = Singleton(AppService, config=config, bot=bot)

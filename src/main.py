@@ -4,18 +4,16 @@ from dependency_injector.providers import Configuration
 
 import ioc
 
-from os.path import dirname, realpath, abspath, join
+from os.path import dirname, realpath, abspath, join, basename, splitext
 from argparse import ArgumentParser
 from pathlib import Path
 import logging
 import sys
 import os
+import glob
 
 
 logger = logging.getLogger(__name__)
-
-user_semaphores = {}
-user_tasks = {}
 
 
 class Color:
@@ -49,20 +47,28 @@ def cli(args=sys.argv[1:]):
     parser = ArgumentParser()
     parser.add_argument('-c', '--config', default=str(config_fn), help='Config file (default: %(default)s')
     parser.add_argument('--log-level', default=os.environ.get('VALERY_LOG_LEVEL', 'INFO'), help='App log level (default: %(default)s')
+    parser.add_argument('--deps-log-level', default=os.environ.get('VALERY_DEPS_LOG_LEVEL', 'WARNING'), help='App deps log level (default: %(default)s')
     parser.add_argument('--no-color', action='store_true', default=False, help='Use no color for log output')
 
     return parser.parse_args(args)
 
 
+def setup_loggers(log_level, deps_log_level, log_format):
+    logging.basicConfig(level=log_level, format=log_format)
+    ours = list(splitext(basename(fn))[0] for fn in glob.glob(join(app_dir, '*.py'))) + ['__main__']
+    for name in logging.root.manager.loggerDict:
+        if name in ours:
+            continue
+        logging.getLogger(name).setLevel(deps_log_level)
+
+
 def main():
     args = cli()
 
-    if args.no_color:
-        log_format = '[%(asctime)s]:%(levelname)-5s:: %(message)s -- {%(filename)s:%(lineno)d:(%(funcName)s)}'
-    else:
-        log_format = f'[{c.white}%(asctime)s{c.off}]:{c.yellow}%(levelname)-5s{c.off}::{c.green} %(message)s {c.white}-- {c.yellow}{{{c.blue}%(filename)s{c.off}:{c.cyan}%(lineno)d{c.off}:({c.purple}%(funcName)s{c.off}){c.yellow}}}{c.off}'
-
-    logging.basicConfig(level=args.log_level, format=log_format)
+    log_format = ('[%(asctime)s]:%(levelname)-5s:: %(message)s -- {%(filename)s:%(lineno)d:(%(funcName)s)}' 
+                  if args.no_color else
+                  f'[{c.white}%(asctime)s{c.off}]:{c.yellow}%(levelname)-5s{c.off}::{c.green} %(message)s {c.white}-- {c.yellow}{{{c.blue}%(filename)s{c.off}:{c.cyan}%(lineno)d{c.off}:({c.purple}%(funcName)s{c.off}){c.yellow}}}{c.off}')
+    setup_loggers(args.log_level, args.deps_log_level, log_format)
 
     container = ioc.Container()
     config_fn = realpath(abspath(args.config))
