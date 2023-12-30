@@ -12,4 +12,4 @@ COPY src /app/
 COPY config /config/
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["python", "-u", "/app/main.py"]
+CMD ["python", "-u", "/app/main.py", "--log-level", "DEBUG"]

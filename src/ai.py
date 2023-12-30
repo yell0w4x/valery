@@ -14,7 +14,6 @@ class Assistant:
                               presence_penalty=0)
 
     def __init__(self, client, config, model='meta-llama/Llama-2-70b-chat-hf'):
-        _logger.debug(config)
         self.__client = client
         self.__config = config
         self.__model = model

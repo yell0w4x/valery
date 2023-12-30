@@ -94,11 +94,11 @@ def pending_protect(method):
 
 
 class Bot:
-    def __init__(self, config, telegram_app_builder, telegram_token, repository, assistant_factory):
-        _logger.debug(f'Creating bot [{telegram_token=}]')
+    def __init__(self, config, telegram_app_builder, repository, assistant_factory):
+        _logger.debug(f'Creating bot [{config=}]')
         self.__config = config
         app = (telegram_app_builder
-            .token(telegram_token)
+            .token(config['telegram_token'])
             .concurrent_updates(True)
             .rate_limiter(AIORateLimiter(max_retries=5))
             .http_version("1.1")
