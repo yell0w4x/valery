@@ -20,7 +20,6 @@ class Assistant:
 
 
     async def send_message(self, message, message_history, chat_mode):
-        _logger.info(f'{message=}')
         client = self.__client
         reply = await client.chat.completions.create(
             model='meta-llama/Llama-2-70b-chat-hf', 
@@ -28,7 +27,7 @@ class Assistant:
             stream=False,
             **self.COMPLETION_OPTIONS
         )
-        _logger.debug(reply)
+        _logger.debug(f'{reply=}')
         response = reply.choices[0].message.content
         usage_stat = reply.usage
         return response, usage_stat
