@@ -1,5 +1,5 @@
 from mongoengine import Document, StringField, IntField, DateField, \
-    connect, EmbeddedDocumentField, EmbeddedDocument, ListField
+    connect, EmbeddedDocumentField, EmbeddedDocument, ListField, FloatField
 # from typing import Optional, Any 
 
 # import pymongo
@@ -16,6 +16,11 @@ _logger = logging.getLogger(__name__)
 class Dialog(EmbeddedDocument):
     role = StringField(choices=('user', 'assistant'))
     content = StringField()
+
+
+class Subscription(EmbeddedDocument):
+    llm_total_tokens = IntField(default=0)
+    transcription_seconds = FloatField(default=0)
 
 
 class User(Document):

@@ -29,6 +29,9 @@ import asyncio
 from contextlib import contextmanager
 from io import BytesIO
 from functools import wraps
+import traceback
+import html
+import json
 
 
 HELP_MESSAGE = """Commands:
@@ -86,11 +89,43 @@ def pending_protect(method):
             raise ValueError('The first arg of protected callable must have an Update type')
 
         if await self._is_reply_pending(update):
+            _logger.debug('Reply peding, do not execute handler')
             return
 
         await method(self, update, *args, **kwargs)
 
     return wrapper
+
+
+def split_text(text, chunk_size):
+    for i in range(0, len(text), chunk_size):
+        yield text[i:i + chunk_size]
+
+
+def format_exc(exc, update):
+    tb_list = traceback.format_exception(None, exc, exc.__traceback__)
+    tb_string = "".join(tb_list)
+    update_str = update.to_dict() if isinstance(update, Update) else str(update)
+    return (
+        f"An exception was raised while handling an update\n"
+        f"<pre>update = {html.escape(json.dumps(update_str, indent=4, ensure_ascii=False))}"
+        "</pre>\n\n"
+        f"<pre>{html.escape(tb_string)}</pre>"
+    )
+
+
+def log_handler(logger):
+    def decorator(method):
+        @wraps(method)
+        async def wrapper(self, *args, **kwargs):
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                update: Update = args[0]
+                logger.debug(f'{method.__name__}: Chat [{update.effective_chat}]; Message [{update.effective_message}]; User [{update.effective_user}]')
+            return await method(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 class Bot:
@@ -122,12 +157,34 @@ class Bot:
         app.add_handler(MessageHandler(filters.VOICE, self.__voice_message_handler))
 
         app.add_handler(CommandHandler("help", self.__help_handler, filters=filters.COMMAND))
+        app.add_error_handler(self.__error_handler)
 
 
     def run(self):
         self.__app.run_polling()
 
 
+    async def __error_handler(self, update: Update, context: CallbackContext) -> None:
+        _logger.error('Error has occurred', exc_info=context.error)
+        if update.effective_chat is None:
+            _logger.debug(f'Nothing to send to as {update.effective_chat=}')
+            return
+
+        try:
+            message = format_exc(context.error, update)
+
+            # split text into multiple messages due to 4096 character limit
+            for message_chunk in split_text(message, 4096):
+                try:
+                    await context.bot.send_message(update.effective_chat.id, message_chunk, parse_mode=ParseMode.HTML)
+                except telegram.error.BadRequest:
+                    # answer has invalid characters, so we send it without parse_mode
+                    await context.bot.send_message(update.effective_chat.id, message_chunk)
+        except BaseException as e:
+            await context.bot.send_message(update.effective_chat.id, "Some error in error handler")
+
+
+    @log_handler(_logger)
     @pending_protect
     async def __voice_message_handler(self, update: Update, context: CallbackContext):
         self.__register_user(update.message.from_user)
@@ -147,6 +204,7 @@ class Bot:
         await self.__message_handler(update, context, alt_text=text)
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __start_handler(self, update: Update, context: CallbackContext):
         tg_user = update.message.from_user
@@ -159,6 +217,7 @@ class Bot:
         await self.__show_chat_modes_handler(update, context)
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __help_handler(self, update: Update, context: CallbackContext):
         tg_user = update.message.from_user
@@ -166,6 +225,7 @@ class Bot:
         await update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.HTML)
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __new_dialog_handler(self, update: Update, context: CallbackContext):
         user = self.__register_user(update.message.from_user)
@@ -176,6 +236,7 @@ class Bot:
         await update.message.reply_text(welcome_message, parse_mode=ParseMode.HTML)
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __message_handler(self, update: Update, context: CallbackContext, alt_text=None):
         tg_user = update.message.from_user
@@ -192,7 +253,9 @@ class Bot:
                 except BaseException as e:
                     error_text = f"Something went wrong during completion. Reason: [{e!r}]"
                     _logger.error(error_text, exc_info=e)
-                    await update.message.reply_text(error_text)
+
+                    message = format_exc(e, update)
+                    await update.message.reply_text(f'{error_text}\n\n{message}', parse_mode=ParseMode.HTML)
 
 
     @contextmanager
@@ -269,11 +332,9 @@ class Bot:
                 prev_answer = whole_answer
         else:
             await message.reply_chat_action(action=ChatAction.TYPING)
-            _logger.info(f'{repr(message_text)}, {message_text=!r}, {type(message_text)}')
             resp, usage = await assistant.send_message(message_text, message_history, chat_mode)
             put_dialog_item(user, message_text, resp)
 
-            _logger.debug(f'{resp=}, {parse_mode=}')
             if is_markdown:
                 resp = escape_markdown(resp)
 
@@ -299,6 +360,7 @@ class Bot:
         return user
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __show_chat_modes_handler(self, update: Update, context: CallbackContext):
         self.__register_user(update.message.from_user)
@@ -306,6 +368,7 @@ class Bot:
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __show_chat_modes_callback_handler(self, update: Update, context: CallbackContext):
         query = update.callback_query
@@ -324,6 +387,7 @@ class Bot:
             _logger.error(f'Edit message error [{e!r}]')
 
 
+    @log_handler(_logger)
     @pending_protect
     async def __set_chat_mode_handler(self, update: Update, context: CallbackContext):
         query = update.callback_query
