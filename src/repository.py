@@ -18,7 +18,7 @@ class Dialog(EmbeddedDocument):
     content = StringField()
 
 
-class Subscription(EmbeddedDocument):
+class Stats(EmbeddedDocument):
     llm_total_tokens = IntField(default=0)
     transcription_seconds = FloatField(default=0)
 
@@ -32,6 +32,8 @@ class User(Document):
     last_seen = DateField()
     chat_mode = StringField(default='english_tutor')
     current_dialog = ListField(EmbeddedDocumentField(Dialog))
+    usage = Stats()
+    limit = Stats()
 
 
 class Repository:

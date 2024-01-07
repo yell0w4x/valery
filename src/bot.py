@@ -22,6 +22,7 @@ from telegram import (
 import telegram
 
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+from pydub import AudioSegment
 
 from datetime import datetime, timezone
 import logging
@@ -32,6 +33,7 @@ from functools import wraps
 import traceback
 import html
 import json
+from tempfile import NamedTemporaryFile
 
 
 HELP_MESSAGE = """Commands:
@@ -70,10 +72,12 @@ def escape_markdown(text):
 
 
 async def transcribe_audio(api_key, buffer):
-    deepgram = DeepgramClient(api_key)
+    from deepgram import DeepgramClientOptions
+
+    deepgram = DeepgramClient(api_key, config=DeepgramClientOptions(verbose=logging.DEBUG))
     options = PrerecordedOptions(
-        # model="nova-2",
-        model='whisper-medium',
+        model="nova-2",
+        # model='whisper-medium',
         smart_format=True,
         language='en'
         # summarize="v2",
@@ -104,15 +108,23 @@ def split_text(text, chunk_size):
 
 def format_exc(exc, update):
     tb_list = traceback.format_exception(None, exc, exc.__traceback__)
-    tb_string = "".join(tb_list)
+    tb_str = html.escape("".join(tb_list))
     update_str = update.to_dict() if isinstance(update, Update) else str(update)
-    return (
-        f"An exception was raised while handling an update\n"
-        f"<pre>update = {html.escape(json.dumps(update_str, indent=4, ensure_ascii=False))}"
-        "</pre>\n\n"
-        f"<pre>{html.escape(tb_string)}</pre>"
-    )
+    update_json_str = html.escape(json.dumps(update_str, indent=4, ensure_ascii=False))
 
+    s = (
+        "An exception was raised while handling an update\n"
+        f"<pre>{update_json_str}</pre>\n"
+        f"<pre>{tb_str}</pre>"
+    )
+    LIMIT = 4096
+    if len(s) <= LIMIT:
+        return [s]
+
+    return (['An exception was raised while handling an update\n'] +
+            [f'<pre>{s}</pre>\n' for s in split_text(update_json_str, LIMIT - len('<pre></pre>\n'))] +
+            [f'<pre>{s}</pre>\n' for s in split_text(tb_str, LIMIT - len('<pre></pre>\n'))])
+    
 
 def log_handler(logger):
     def decorator(method):
@@ -126,6 +138,16 @@ def log_handler(logger):
         return wrapper
 
     return decorator
+
+
+def get_ogg_duration_secs(file):
+    pos = file.tell()
+    try:
+        duration = AudioSegment.from_ogg(file).duration_seconds
+    finally:
+        file.seek(pos)
+
+    return duration
 
 
 class Bot:
@@ -174,13 +196,15 @@ class Bot:
             message = format_exc(context.error, update)
 
             # split text into multiple messages due to 4096 character limit
-            for message_chunk in split_text(message, 4096):
+            for message_chunk in message:
                 try:
                     await context.bot.send_message(update.effective_chat.id, message_chunk, parse_mode=ParseMode.HTML)
-                except telegram.error.BadRequest:
+                except telegram.error.BadRequest as e:
                     # answer has invalid characters, so we send it without parse_mode
+                    _logger.error('Error has occurred', exc_info=e)
                     await context.bot.send_message(update.effective_chat.id, message_chunk)
         except BaseException as e:
+            _logger.error('Error has occurred', exc_info=e)
             await context.bot.send_message(update.effective_chat.id, "Some error in error handler")
 
 
@@ -196,6 +220,8 @@ class Bot:
         await voice_file.download_to_memory(buf)
         buf.name = "voice.oga"  # file extension is required
         buf.seek(0)
+        duration_seconds = get_ogg_duration_secs(buf)
+        _logger.debug(f'Got audio file: [{duration_seconds=} secs]')
 
         response = await transcribe_audio(self.__config['deepgram_token'], buf)
         _logger.debug(f'Voice transcription [{response}]')
@@ -449,12 +475,15 @@ class Bot:
 
     async def _is_reply_pending(self, update: Update):
         is_message = hasattr(update, 'message') and isinstance(update.message, Message)
-        message = update.message if is_message else update.callback_query.message
-        user = update.message.from_user if is_message else update.callback_query.from_user
+        # message = update.message if is_message else update.callback_query.message
+        message = update.effective_message
+        # user = update.message.from_user if is_message else update.callback_query.from_user
+        user = update.effective_user
+        assert user and message
         self.__register_user(user)
 
         if self.__locks[user.id].locked():
-            if not is_message:
+            if update.callback_query is not None:
                 await update.callback_query.answer()
 
             text = "⏳ Please <b>wait</b> for a reply to the previous message\nOr you can /cancel it"
