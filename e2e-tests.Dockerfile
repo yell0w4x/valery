@@ -11,7 +11,6 @@ RUN pip install -r requirements.txt
 COPY e2e-tests/src /test/
 # COPY config /config/
 COPY src/repository.py /test/
-# RUN ls -lha
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["pytest"]
