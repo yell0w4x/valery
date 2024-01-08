@@ -57,7 +57,7 @@ class Assistant:
             stream=False,
             **self.__completion_opts
         )
-        _logger.debug(f'{reply=}')
+        _logger.debug(f'Reply from model: [{reply=}]')
         response = reply.choices[0].message.content
         usage_stat = reply.usage
         return response, usage_stat

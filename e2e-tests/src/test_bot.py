@@ -140,6 +140,7 @@ async def test_new_dialog_command(telegram_client, chatbot_id, user_id):
     message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, '/new')
     message = await message_arrived
+    print(f'{message=}')
     assert message.text.startswith('Starting new dialog')
     user = User.objects.get(username=user_id)
     assert len(user.current_dialog) == 0
@@ -152,6 +153,10 @@ async def test_unable_to_send_two_messages_in_a_row_without_getting_reply_to_fir
     await telegram_client.send_message(chatbot_id, 'How are you?')
     message = await message_arrived
     assert 'Please wait for a reply' in message.text
+
+    message_arrived = wait_for_message(telegram_client)
+    message = await message_arrived
+    assert 'Hello!' in message.text
 
 
 @pytest.mark.anyio
