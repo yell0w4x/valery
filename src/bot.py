@@ -27,13 +27,13 @@ from pydub import AudioSegment
 from datetime import datetime, timezone
 import logging
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from io import BytesIO
 from functools import wraps
 import traceback
 import html
 import json
-from tempfile import NamedTemporaryFile
+from collections import namedtuple
 
 
 HELP_MESSAGE = """Commands:
@@ -63,7 +63,7 @@ _logger = logging.getLogger(__name__)
 
 def escape_markdown(text):
     # SPECIAL_CHARS = '\\', '_', '*', '[', ']', '(', ')', '~', '`', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
-    SPECIAL_CHARS = '\\', '[', ']', '(', ')', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+    SPECIAL_CHARS = '\\', '[', ']', '*', '(', ')', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
 
     for char in SPECIAL_CHARS:
         text = text.replace(char, f'\\{char}')
@@ -86,19 +86,53 @@ async def transcribe_audio(api_key, buffer):
     return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options)
 
 
+PendingGuard = namedtuple('PendingGuard', ['lock', 'message_lock', 'messages'])
+
+
+@contextmanager
+def pending_message(guard, message):
+    guard.messages.append(message)
+    _logger.debug(f'Guard messages PUSH: [{len(guard.messages)=}, {message=}]')
+    try:
+        yield guard.lock
+    finally:
+        message = guard.messages.pop()
+        _logger.debug(f'Guard messages POP: [{len(guard.messages)=}, {message=}]')
+
+
 def pending_protect(method):
     @wraps(method)
-    async def wrapper(self, update, *args, **kwargs):
+    async def pending_guard(self, update, *args, **kwargs):
         if not isinstance(update, Update):
             raise ValueError('The first arg of protected callable must have an Update type')
 
-        if await self._is_reply_pending(update):
-            _logger.debug('Reply peding, do not execute handler')
-            return
+        message = update.effective_message
+        user = update.effective_user
+        assert message and user
 
-        await method(self, update, *args, **kwargs)
+        self._register_user(user)
+        guard = self._get_pending_guard(user.id)
+        _logger.debug(f'Processing message: [{message.id=}; {message.text=}; {len(guard.messages)=};]')
 
-    return wrapper
+        with pending_message(guard, message) as lock:
+            _logger.debug(f'Penindg get IN: [{len(guard.messages)=}; {guard.messages=}]')
+            if len(guard.messages) > 1:
+                async with guard.message_lock:
+                    if update.callback_query is not None:
+                        await update.callback_query.answer()
+
+                    text = "⏳ Please <b>wait</b> for a reply to the previous message\nOr you can /cancel it"
+                    await message.reply_text(text, reply_to_message_id=message.id, parse_mode=ParseMode.HTML)
+                    return
+
+            async with lock:
+                _logger.debug(f'Enter method: [{method.__name__}]')
+                await method(self, update, *args, **kwargs)
+                _logger.debug(f'Exit method: [{method.__name__}]')
+
+        _logger.debug(f'Penindg get OUT: [{len(guard.messages)=}; {guard.messages=}]')
+
+    return pending_guard
 
 
 def split_text(text, chunk_size):
@@ -129,13 +163,13 @@ def format_exc(exc, update):
 def log_handler(logger):
     def decorator(method):
         @wraps(method)
-        async def wrapper(self, *args, **kwargs):
+        async def telegram_call_log(self, *args, **kwargs):
             if logger.getEffectiveLevel() == logging.DEBUG:
                 update: Update = args[0]
-                logger.debug(f'{method.__name__}: Chat [{update.effective_chat}]; Message [{update.effective_message}]; User [{update.effective_user}]')
+                logger.debug(f'>> TELEGRAM CALL: {method.__name__}: Chat [{update.effective_chat}]; Message [{update.effective_message}]; User [{update.effective_user}]')
             return await method(self, *args, **kwargs)
 
-        return wrapper
+        return telegram_call_log
 
     return decorator
 
@@ -167,7 +201,8 @@ class Bot:
         self.__repo = repository
         self.__assistant_factory = assistant_factory
         self.__tasks = dict()
-        self.__locks = dict()
+        self.__pending_guards = dict()
+        self._register_user = self.__register_user
         app.add_handler(CommandHandler("start", self.__start_handler, filters=filters.COMMAND))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.__message_handler))
 
@@ -189,7 +224,7 @@ class Bot:
     async def __error_handler(self, update: Update, context: CallbackContext) -> None:
         _logger.error('Error has occurred', exc_info=context.error)
         if update.effective_chat is None:
-            _logger.debug(f'Nothing to send to as {update.effective_chat=}')
+            _logger.debug(f'Nothing to send to: [{update.effective_chat=}]')
             return
 
         try:
@@ -224,10 +259,10 @@ class Bot:
         _logger.debug(f'Got audio file: [{duration_seconds=} secs]')
 
         response = await transcribe_audio(self.__config['deepgram_token'], buf)
-        _logger.debug(f'Voice transcription [{response}]')
+        _logger.debug(f'Voice transcription: [{response=}]')
         text = str(response.results.channels[0].alternatives[0].transcript)
         await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
-        await self.__message_handler(update, context, alt_text=text)
+        await self.__handle_message(update, context, alt_text=text)
 
 
     @log_handler(_logger)
@@ -240,7 +275,7 @@ class Bot:
         reply_text += HELP_MESSAGE
 
         await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
-        await self.__show_chat_modes_handler(update, context)
+        await self.__show_chat_modes(update, context)
 
 
     @log_handler(_logger)
@@ -265,23 +300,31 @@ class Bot:
     @log_handler(_logger)
     @pending_protect
     async def __message_handler(self, update: Update, context: CallbackContext, alt_text=None):
+        await self.__handle_message(update, context, alt_text)
+
+
+    async def __handle_message(self, update: Update, context: CallbackContext, alt_text=None):
         tg_user = update.message.from_user
         user = self.__register_user(tg_user)
 
-        _logger.debug(f'Message arrived [{alt_text or update.message.text}]')
+        _logger.debug(f'Message arrived: [{alt_text or update.message.text}, message.id={update.message.id if alt_text is None else None}]')
 
-        async with self.__locks[tg_user.id]:
-            with self.__task_man(tg_user.id, update.message, user.current_dialog, user.chat_mode, alt_text) as task:
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    await update.message.reply_text("✅ Canceled", parse_mode=ParseMode.HTML)
-                except BaseException as e:
-                    error_text = f"Something went wrong during completion. Reason: [{e!r}]"
-                    _logger.error(error_text, exc_info=e)
+        typing_task = asyncio.create_task(self.__bot_typing_task(update.message))
+        with self.__task_man(tg_user.id, update.message, user.current_dialog, user.chat_mode, alt_text) as task:
+            try:
+                await asyncio.wait([task, typing_task], return_when=asyncio.FIRST_COMPLETED)
+                task.result()
+            except asyncio.CancelledError:
+                await update.message.reply_text("✅ Canceled", parse_mode=ParseMode.HTML)
+            except BaseException as e:
+                error_text = f"Something went wrong during completion. Reason: [{e!r}]"
+                _logger.error(error_text, exc_info=e)
 
-                    message = format_exc(e, update)
-                    await update.message.reply_text(f'{error_text}\n\n{message}', parse_mode=ParseMode.HTML)
+                message = format_exc(e, update)
+                await update.message.reply_text(f'{error_text}\n\n{message}', parse_mode=ParseMode.HTML)
+
+        if not typing_task.cancelled():
+            typing_task.cancel()
 
 
     @contextmanager
@@ -319,7 +362,6 @@ class Bot:
         # it unable to find closing pair of starting markup symbol
         is_code_assistant = chat_mode == 'code_assistant'
         message_text = alt_text or message.text
-        # message_text = message.text
 
         if config['message_streaming'] and not is_code_assistant:
             placeholder_message = await message.reply_text('...')
@@ -345,7 +387,7 @@ class Bot:
                                                            message_id=placeholder_message.message_id, 
                                                            parse_mode=parse_mode)
                 except telegram.error.BadRequest as e:
-                    _logger.warn(f'BadRequest [{e}]')
+                    _logger.warn(f'BadRequest: [{e!r}]', exc_info=e)
                     if str(e).startswith("Message is not modified"):
                         continue
                     else:
@@ -357,19 +399,33 @@ class Bot:
                 await asyncio.sleep(0.01)
                 prev_answer = whole_answer
         else:
-            await message.reply_chat_action(action=ChatAction.TYPING)
             resp, usage = await assistant.send_message(message_text, message_history, chat_mode)
             put_dialog_item(user, message_text, resp)
 
             if is_markdown:
                 resp = escape_markdown(resp)
 
-            await message.reply_text(resp, parse_mode=parse_mode)
+            guard = self.__pending_guards[user.id]
+            async with guard.message_lock:
+                _logger.debug(f'Reply to user with: [{resp=}]')
+                try:
+                    await message.reply_text(resp, parse_mode=parse_mode)
+                except telegram.error.BadRequest as e:
+                    _logger.warn(f'BadRequest: [{e!r}]', exc_info=e)
+                    await message.reply_text(resp)
+
+
+    async def __bot_typing_task(self, message):
+        while True:
+            await message.reply_chat_action(action=ChatAction.TYPING)
+            await asyncio.sleep(5.5)
 
 
     def __register_user(self, tg_user):
-        if tg_user.id not in self.__locks:
-            self.__locks[tg_user.id] = asyncio.Semaphore()
+        if tg_user.id not in self.__pending_guards:
+            self.__pending_guards[tg_user.id] = PendingGuard(lock=asyncio.Lock(),
+                                                             message_lock=asyncio.Lock(),
+                                                             messages=list())
 
         now_utc = datetime.now(tz=timezone.utc)
         repo = self.__repo
@@ -389,6 +445,10 @@ class Bot:
     @log_handler(_logger)
     @pending_protect
     async def __show_chat_modes_handler(self, update: Update, context: CallbackContext):
+        await self.__show_chat_modes(update, context)
+
+
+    async def __show_chat_modes(self, update: Update, context: CallbackContext):
         self.__register_user(update.message.from_user)
         text, reply_markup = self.__get_chat_mode_menu()
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
@@ -473,24 +533,8 @@ class Bot:
         return text, reply_markup
 
 
-    async def _is_reply_pending(self, update: Update):
-        is_message = hasattr(update, 'message') and isinstance(update.message, Message)
-        # message = update.message if is_message else update.callback_query.message
-        message = update.effective_message
-        # user = update.message.from_user if is_message else update.callback_query.from_user
-        user = update.effective_user
-        assert user and message
-        self.__register_user(user)
-
-        if self.__locks[user.id].locked():
-            if update.callback_query is not None:
-                await update.callback_query.answer()
-
-            text = "⏳ Please <b>wait</b> for a reply to the previous message\nOr you can /cancel it"
-            await message.reply_text(text, reply_to_message_id=message.id, parse_mode=ParseMode.HTML)
-            return True
-
-        return False
+    def _get_pending_guard(self, user_id):
+        return self.__pending_guards[user_id]
 
 
     async def __post_init(self, app):
@@ -504,3 +548,4 @@ class Bot:
             # BotCommand("/settings", "Show settings"),
             BotCommand("/help", "Show help message"),
         ])
+

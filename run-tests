@@ -59,8 +59,16 @@ set -eEu
 
 E2E_CONTAINER=e2e-test-instance
 # VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
+ARTIFACTS_DIR="${SCRIPT_DIR}/.artifacts"
 
 remove_container() {
+    if [ -n "$(docker ps -qa --filter name=valery)" ]; then
+        rm -rf "${ARTIFACTS_DIR}"
+        mkdir -p "${ARTIFACTS_DIR}"
+        echo 'Collecting artifacts...'
+        docker logs valery &> "${ARTIFACTS_DIR}/valery.log"
+    fi
+
     if [ -n "${REMOVED+x}" ]; then
         return
     fi
@@ -78,7 +86,6 @@ remove_container() {
     fi 
 
     if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
-        # mkdir -p "${ARTIFACTS_DIR}"
         docker stop "${E2E_CONTAINER}"
         # set +e
         # docker cp "${E2E_CONTAINER}":/test/sut/sut.log "${ARTIFACTS_DIR}"
