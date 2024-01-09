@@ -137,9 +137,10 @@ async def test_new_dialog_command(telegram_client, chatbot_id, user_id):
         user = User.objects.get(username=user_id)
         await asyncio.sleep(1)
 
-    message_arrived = expect_message(telegram_client)
+    # message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, '/new')
-    message = await message_arrived
+    message = await wait_for_message(telegram_client)
+    # message = await message_arrived
     print(f'{message=}')
     assert message.text.startswith('Starting new dialog')
     user = User.objects.get(username=user_id)
