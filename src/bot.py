@@ -34,6 +34,7 @@ import traceback
 import html
 import json
 from collections import namedtuple
+import markdown
 
 
 HELP_MESSAGE = """Commands:
@@ -63,7 +64,7 @@ _logger = logging.getLogger(__name__)
 
 def escape_markdown(text):
     # SPECIAL_CHARS = '\\', '_', '*', '[', ']', '(', ')', '~', '`', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
-    SPECIAL_CHARS = '\\', '[', ']', '*', '(', ')', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+    SPECIAL_CHARS = '\\', '[', ']', '(', ')', '>', '<', '&', '#', '+', '-', '=', '|', '{', '}', '.', '!'
 
     for char in SPECIAL_CHARS:
         text = text.replace(char, f'\\{char}')
@@ -135,7 +136,10 @@ def pending_protect(method):
     return pending_guard
 
 
-def split_text(text, chunk_size):
+MESSAGE_LEN_LIMIT = 4096
+
+
+def split_text(text, chunk_size=MESSAGE_LEN_LIMIT):
     for i in range(0, len(text), chunk_size):
         yield text[i:i + chunk_size]
 
@@ -151,14 +155,13 @@ def format_exc(exc, update):
         f"<pre>{update_json_str}</pre>\n"
         f"<pre>{tb_str}</pre>"
     )
-    LIMIT = 4096
-    if len(s) <= LIMIT:
+    if len(s) <= MESSAGE_LEN_LIMIT:
         return [s]
 
     return (['An exception was raised while handling an update\n'] +
-            [f'<pre>{s}</pre>\n' for s in split_text(update_json_str, LIMIT - len('<pre></pre>\n'))] +
-            [f'<pre>{s}</pre>\n' for s in split_text(tb_str, LIMIT - len('<pre></pre>\n'))])
-    
+            [f'<pre>{s}</pre>\n' for s in split_text(update_json_str, MESSAGE_LEN_LIMIT - len('<pre></pre>\n'))] +
+            [f'<pre>{s}</pre>\n' for s in split_text(tb_str, MESSAGE_LEN_LIMIT - len('<pre></pre>\n'))])
+
 
 def log_handler(logger):
     def decorator(method):
@@ -182,6 +185,17 @@ def get_ogg_duration_secs(file):
         file.seek(pos)
 
     return duration
+
+
+async def send_reply(text, message, parse_mode=None):
+    _logger.debug(f'Reply to user with: [{text=}]')
+    try:
+        for s in split_text(text):
+            await message.reply_text(s, parse_mode=parse_mode)
+    except telegram.error.BadRequest as e:
+        _logger.warn(f'BadRequest: [{e!r}]', exc_info=e)
+        for s in split_text(text):
+            await message.reply_text(s)
 
 
 class Bot:
@@ -309,26 +323,31 @@ class Bot:
 
         _logger.debug(f'Message arrived: [{alt_text or update.message.text}, message.id={update.message.id if alt_text is None else None}]')
 
-        typing_task = asyncio.create_task(self.__bot_typing_task(update.message))
-        with self.__task_man(tg_user.id, update.message, user.current_dialog, user.chat_mode, alt_text) as task:
+        with (self.__reply_task(tg_user.id, update.message, user.current_dialog, user.chat_mode, alt_text) as reply_task, 
+              self.__typing_task(update.message) as typing_task):
             try:
-                await asyncio.wait([task, typing_task], return_when=asyncio.FIRST_COMPLETED)
-                task.result()
+                await asyncio.wait([reply_task, typing_task], return_when=asyncio.FIRST_COMPLETED)
+                reply_task.result()
             except asyncio.CancelledError:
                 await update.message.reply_text("✅ Canceled", parse_mode=ParseMode.HTML)
             except BaseException as e:
                 error_text = f"Something went wrong during completion. Reason: [{e!r}]"
                 _logger.error(error_text, exc_info=e)
-
-                message = format_exc(e, update)
-                await update.message.reply_text(f'{error_text}\n\n{message}', parse_mode=ParseMode.HTML)
-
-        if not typing_task.cancelled():
-            typing_task.cancel()
+                raise
 
 
     @contextmanager
-    def __task_man(self, user_id, message, message_history, chat_mode, alt_text):
+    def __typing_task(self, message):
+        task = asyncio.create_task(self.__bot_typing_task(message))
+        try:
+            yield task
+        finally:
+            if not task.cancelled():
+                task.cancel()
+
+
+    @contextmanager
+    def __reply_task(self, user_id, message, message_history, chat_mode, alt_text):
         task = asyncio.create_task(self.__message_handler_task(
             self.__repo.get_user(user_id), message, message_history, chat_mode, alt_text))
         tasks = self.__tasks
@@ -346,7 +365,6 @@ class Bot:
                     markdown=ParseMode.MARKDOWN,
                     markdown_v2=ParseMode.MARKDOWN_V2).get(config['chat_modes'][chat_mode]['parse_mode'], 
                                                            ParseMode.HTML)
-
 
     async def __message_handler_task(self, user, message, message_history, chat_mode, alt_text):
         def put_dialog_item(user, message_text, response):
@@ -407,18 +425,13 @@ class Bot:
 
             guard = self.__pending_guards[user.id]
             async with guard.message_lock:
-                _logger.debug(f'Reply to user with: [{resp=}]')
-                try:
-                    await message.reply_text(resp, parse_mode=parse_mode)
-                except telegram.error.BadRequest as e:
-                    _logger.warn(f'BadRequest: [{e!r}]', exc_info=e)
-                    await message.reply_text(resp)
+                await send_reply(resp, message, parse_mode)
 
 
     async def __bot_typing_task(self, message):
         while True:
             await message.reply_chat_action(action=ChatAction.TYPING)
-            await asyncio.sleep(5.5)
+            await asyncio.sleep(6)
 
 
     def __register_user(self, tg_user):
