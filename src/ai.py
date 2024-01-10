@@ -1,6 +1,9 @@
 import openai
 import logging
-
+from collections import Counter
+import re
+import math
+import asyncio
 
 _logger = logging.getLogger(__name__)
 
@@ -9,28 +12,44 @@ class AssistantError(RuntimeError):
     pass
 
 
-def _adapt_message_history(context_limit, prompt, message_history, message):
-    def get_token_num(text):
-        TOKEN_FACTOR = 1.5
-        return int(len(text) * 1.5)
+async def get_token_num(text):
+    process = await asyncio.create_subprocess_exec('node', 'tokenizer/main.mjs', 
+                                                    stdin=asyncio.subprocess.PIPE, 
+                                                    stdout=asyncio.subprocess.PIPE, 
+                                                    stderr=asyncio.subprocess.PIPE)
+    stdout, stderr = await process.communicate(text.encode('utf-8'))
+    if process.returncode != 0:
+        raise AssistantError(text, stdout, stderr, process.returncode)
 
-    context_limit -= get_token_num(prompt) + get_token_num(message)
+    _logger.debug(f'Tokenizer returned: [{stdout}]')
+    return sum(map(int, stdout.decode().split()))
+
+
+async def _adapt_message_history(context_limit, prompt, message_history, message):
+    token_num = await get_token_num(prompt) + await get_token_num(message)
+    total_tokens = token_num
+    context_limit -= token_num
     if context_limit < 0:
         raise AssistantError('Context limit exceeded')
 
     rmh = list(reversed(message_history))
 
-    i = 0
-    for i, item in enumerate(zip(rmh[::2], rmh[1::2])):
-        assistant, user = item
-        token_num = get_token_num(assistant.content) + get_token_num(user.content)
+    def to_dict(item):
+        return dict(role=item.role, content=item.content)
+
+    dialog = list()
+    for item in zip(rmh[1::2], rmh[::2]):
+        user, assistant = item
+        token_num = await get_token_num(assistant.content) + await get_token_num(user.content)
         if token_num > context_limit:
             break
+        dialog += [to_dict(assistant), to_dict(user)]
         context_limit -= token_num
+        total_tokens += token_num
 
-    return ([dict(role='system', content=prompt)] + 
-            [dict(role=el.role, content=el.content) for item in reversed(list(zip(rmh[::2], rmh[1::2]))[:i]) for el in reversed(item)] +
-            [dict(role='user', content=message)])
+    _logger.debug(f'Dialog total tokens: [{total_tokens=}]')
+    dialog = list(reversed(dialog))
+    return [dict(role='system', content=prompt)] + dialog + [dict(role='user', content=message)]
 
 
 class Assistant:
@@ -51,9 +70,11 @@ class Assistant:
 
     async def send_message(self, message, message_history, chat_mode):
         client = self.__client
+        messages = await self.__adapt_message_history(message, message_history, chat_mode)
+        _logger.debug(f'Messages to be sent to model: [{messages=}]')
         reply = await client.chat.completions.create(
             model=self.__model,
-            messages=self.__adapt_message_history(message, message_history, chat_mode),
+            messages=messages,
             stream=False,
             **self.__completion_opts
         )
@@ -65,7 +86,8 @@ class Assistant:
 
     async def send_message_stream(self, message, message_history, chat_mode):
         client = self.__client
-        messages = self.__adapt_message_history(message, message_history, chat_mode)
+        messages = await self.__adapt_message_history(message, message_history, chat_mode)
+        _logger.debug(f'Messages to be sent to model: [{messages=}]')
         gen = await client.chat.completions.create(
             model=self.__model,
             messages=messages,
@@ -84,6 +106,6 @@ class Assistant:
             yield None
 
 
-    def __adapt_message_history(self, message, message_history, chat_mode):
+    async def __adapt_message_history(self, message, message_history, chat_mode):
         prompt = self.__config['chat_modes'][chat_mode]['prompt_start']
-        return _adapt_message_history(self.__context_limit, prompt, message_history, message)
+        return await _adapt_message_history(self.__context_limit, prompt, message_history, message)
