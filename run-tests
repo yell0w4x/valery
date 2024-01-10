@@ -47,6 +47,10 @@ while [ "${#}" -gt 0 ]; do
             LEAVE_DB=1
             ;;
 
+        --leave-containers)
+            LEAVE_CONTAINERS=1
+            ;;
+
         *)
             ARGS+=("${1}")
             ;;
@@ -62,6 +66,11 @@ E2E_CONTAINER=e2e-test-instance
 ARTIFACTS_DIR="${SCRIPT_DIR}/.artifacts"
 
 remove_container() {
+    if [ -n "${REMOVED+x}" ]; then
+        return
+    fi
+    REMOVED=1
+
     if [ -n "$(docker ps -qa --filter name=valery)" ]; then
         rm -rf "${ARTIFACTS_DIR}"
         mkdir -p "${ARTIFACTS_DIR}"
@@ -69,27 +78,23 @@ remove_container() {
         docker logs valery &> "${ARTIFACTS_DIR}/valery.log"
     fi
 
-    if [ -n "${REMOVED+x}" ]; then
-        return
+    if [ -n "${LEAVE_CONTAINERS+x}" ]; then
+        docker compose stop
+    else
+        if [ -n "${LEAVE_DB+x}" ]; then
+            docker compose rm --stop --force
+        else 
+            docker compose rm --stop --force --volumes
+
+            VOLUME="$(docker volume ls -q | grep valery-data --color=never)"
+            if [ -n "${VOLUME}" ]; then
+                docker volume rm --force "${VOLUME}"
+            fi
+        fi 
     fi
-
-    REMOVED=1
-    if [ -n "${LEAVE_DB+x}" ]; then
-        docker compose rm --stop --force
-    else 
-        docker compose rm --stop --force --volumes
-
-        VOLUME="$(docker volume ls -q | grep valery-data --color=never)"
-        if [ -n "${VOLUME}" ]; then
-            docker volume rm --force "${VOLUME}"
-        fi
-    fi 
 
     if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
         docker stop "${E2E_CONTAINER}"
-        # set +e
-        # docker cp "${E2E_CONTAINER}":/test/sut/sut.log "${ARTIFACTS_DIR}"
-        # set -e
         docker rm --force "${E2E_CONTAINER}"
     fi
 }

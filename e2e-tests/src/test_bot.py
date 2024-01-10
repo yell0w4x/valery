@@ -195,3 +195,4 @@ async def test_voice(telegram_client: Client, chatbot_id, user_id):
         await telegram_client.send_voice(chatbot_id, voice=f)
         message = await message_arrived
         assert 'Hi there' in message.text
+        await wait_for_message(telegram_client)

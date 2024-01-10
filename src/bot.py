@@ -187,14 +187,19 @@ def get_ogg_duration_secs(file):
     return duration
 
 
+def is_markdown(parse_mode):
+    return parse_mode.lower().startswith('markdown')
+
+
 async def send_reply(text, message, parse_mode=None):
+    #fixme: Split code containig messages in smart way completing closing and opening markup symbols
     _logger.debug(f'Reply to user with: [{text=}]')
     try:
         for s in split_text(text):
             await message.reply_text(s, parse_mode=parse_mode)
     except telegram.error.BadRequest as e:
         _logger.warn(f'BadRequest: [{e!r}]', exc_info=e)
-        for s in split_text(text):
+        for s in split_text(text.replace('\\', '') if is_markdown(parse_mode) else text):
             await message.reply_text(s)
 
 
@@ -375,7 +380,7 @@ class Bot:
         assistant = self.__assistant_factory()
         config = self.__config
         parse_mode = self.__parse_mode(chat_mode)
-        is_markdown = parse_mode.lower().startswith('markdown')
+        
         # can't stream markdown as telegram fails with parsing errors because of 
         # it unable to find closing pair of starting markup symbol
         is_code_assistant = chat_mode == 'code_assistant'
@@ -390,7 +395,7 @@ class Bot:
                 limit = config['stream_update_chars']
 
                 if answer is not None:
-                    whole_answer += escape_markdown(answer) if is_markdown else answer
+                    whole_answer += escape_markdown(answer) if is_markdown(parse_mode) else answer
 
                 if answer is not None and abs(len(whole_answer) - len(prev_answer)) < limit:
                     continue
@@ -420,7 +425,7 @@ class Bot:
             resp, usage = await assistant.send_message(message_text, message_history, chat_mode)
             put_dialog_item(user, message_text, resp)
 
-            if is_markdown:
+            if is_markdown(parse_mode):
                 resp = escape_markdown(resp)
 
             guard = self.__pending_guards[user.id]
