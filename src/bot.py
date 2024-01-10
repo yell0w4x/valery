@@ -72,7 +72,7 @@ def escape_markdown(text):
     return text
 
 
-async def transcribe_audio(api_key, buffer):
+async def transcribe_audio(api_key, buffer, timeout):
     from deepgram import DeepgramClientOptions
 
     deepgram = DeepgramClient(api_key, config=DeepgramClientOptions(verbose=logging.DEBUG))
@@ -84,6 +84,7 @@ async def transcribe_audio(api_key, buffer):
         # summarize="v2",
     )
     payload = dict(buffer=buffer)
+    # return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options, timeout=timeout)
     return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options)
 
 
@@ -277,7 +278,8 @@ class Bot:
         duration_seconds = get_ogg_duration_secs(buf)
         _logger.debug(f'Got audio file: [{duration_seconds=} secs]')
 
-        response = await transcribe_audio(self.__config['deepgram_token'], buf)
+        config = self.__config
+        response = await transcribe_audio(config['deepgram_token'], buf, config['deepgram_timeout'])
         _logger.debug(f'Voice transcription: [{response=}]')
         text = str(response.results.channels[0].alternatives[0].transcript)
         await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
