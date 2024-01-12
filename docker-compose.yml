@@ -6,18 +6,18 @@ volumes:
 services:
   mongo:
     container_name: mongo
-    image: mongo:latest
+    # image: mongo:latest
+    build:
+      dockerfile: mongo.Dockerfile
     restart: always
-    # ports:
-    #   - 127.0.0.1:${MONGODB_PORT:-27017}:${MONGODB_PORT:-27017}
+    user: mongo:mongo
     volumes:
-      - valery-data:/data/db
-      # - ${MONGODB_PATH:-./.volumes/mongodb}:/data/db
-    # TODO: add auth
+      # - valery-data:/data/db
+      - ${MONGODB_PATH:-./.volumes/mongodb}:/data/db
 
   valery:
     container_name: valery
-    command: python3 -u /app/main.py --log-level "${VALERY_LOG_LEVEL:-DEBUG}" --deps-log-level "${VALERY_DEPS_LOG_LEVEL:-WARNING}"
+    command: python3 -u /home/valery/app/main.py --log-level "${VALERY_LOG_LEVEL:-DEBUG}" --deps-log-level "${VALERY_DEPS_LOG_LEVEL:-WARNING}"
     restart: always
     build: "."
     # volumes:

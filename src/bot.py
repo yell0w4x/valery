@@ -279,11 +279,15 @@ class Bot:
         _logger.debug(f'Got audio file: [{duration_seconds=} secs]')
 
         config = self.__config
-        response = await transcribe_audio(config['deepgram_token'], buf, config['deepgram_timeout'])
+        response = await transcribe_audio(config['deepgram_token'], buf.read(), config['deepgram_timeout'])
         _logger.debug(f'Voice transcription: [{response=}]')
         text = str(response.results.channels[0].alternatives[0].transcript)
-        await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
-        await self.__handle_message(update, context, alt_text=text)
+        if text:
+            await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
+            await self.__handle_message(update, context, alt_text=text)
+        else:
+            await update.message.reply_text(f'🎙️ Got it\n&lt;Nothing&gt;', parse_mode=ParseMode.HTML)
+            await update.message.reply_text(f'Please say something', parse_mode=ParseMode.HTML)
 
 
     @log_handler(_logger)
@@ -387,6 +391,7 @@ class Bot:
         # it unable to find closing pair of starting markup symbol
         is_code_assistant = chat_mode == 'code_assistant'
         message_text = alt_text or message.text
+        assert message_text
 
         if config['message_streaming'] and not is_code_assistant:
             placeholder_message = await message.reply_text('...')

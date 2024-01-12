@@ -188,11 +188,12 @@ async def test_must_forbid_to_select_chat_mode_if_message_pending(telegram_clien
 
 
 @pytest.mark.anyio
-async def test_voice(telegram_client: Client, chatbot_id, user_id):
-    with open('hi-there.oga', 'rb') as f:
+@pytest.mark.parametrize('fn, expected', [('hi-there.oga', 'Hi there'), ('silence.ogg', '<Nothing>')])
+async def test_voice(telegram_client: Client, chatbot_id, user_id, fn, expected):
+    with open(fn, 'rb') as f:
         print(type(f), f.name)
         message_arrived = expect_message(telegram_client)
         await telegram_client.send_voice(chatbot_id, voice=f)
         message = await message_arrived
-        assert 'Hi there' in message.text
+        assert expected in message.text
         await wait_for_message(telegram_client)

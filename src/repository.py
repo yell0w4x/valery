@@ -1,12 +1,5 @@
 from mongoengine import Document, StringField, IntField, DateField, \
     connect, EmbeddedDocumentField, EmbeddedDocument, ListField, FloatField
-# from typing import Optional, Any 
-
-# import pymongo
-# import uuid
-# from datetime import datetime
-
-# import config
 import logging
 
 
@@ -21,6 +14,7 @@ class Dialog(EmbeddedDocument):
 class Stats(EmbeddedDocument):
     llm_total_tokens = IntField(default=0)
     transcription_seconds = FloatField(default=0)
+    tts_total_tokens = IntField(default=0)
 
 
 class User(Document):

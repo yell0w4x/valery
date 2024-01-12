@@ -62,7 +62,8 @@ done
 set -eEu
 
 E2E_CONTAINER=e2e-test-instance
-# VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
+VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
+MONGO_VOLUMES_DIR="${VOLUMES_DIR}/mongodb"
 ARTIFACTS_DIR="${SCRIPT_DIR}/.artifacts"
 
 remove_container() {
@@ -85,6 +86,7 @@ remove_container() {
             docker compose rm --stop --force
         else 
             docker compose rm --stop --force --volumes
+            rm -rf "${VOLUMES_DIR}"
 
             VOLUME="$(docker volume ls -q | grep valery-data --color=never)"
             if [ -n "${VOLUME}" ]; then
@@ -93,10 +95,10 @@ remove_container() {
         fi 
     fi
 
-    if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
-        docker stop "${E2E_CONTAINER}"
-        docker rm --force "${E2E_CONTAINER}"
-    fi
+    # if [ -n "$(docker ps -a | grep "${E2E_CONTAINER}")" ]; then
+    #     docker stop "${E2E_CONTAINER}"
+    #     docker rm --force "${E2E_CONTAINER}"
+    # fi
 }
 
 on_exit() {
@@ -112,6 +114,8 @@ trap 'on_error ${?} ${LINENO}' ERR
 
 echo -e "\e[36mRunning e2e tests...\e[0m"
 
+mkdir -p "${MONGO_VOLUMES_DIR}"
+
 E2E_TESTS_DIR="${SCRIPT_DIR}/e2e-tests"
 E2E_IMAGE=e2e-test
 E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/e2e-tests.Dockerfile"
@@ -121,6 +125,6 @@ pushd "${SCRIPT_DIR}"
 docker build -t "${E2E_IMAGE}:latest" -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
 docker compose build
 docker compose up -d
-docker run --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"
+docker run --rm --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"
 
 popd
