@@ -13,7 +13,8 @@ Usage:
 Options:
     --new               Launch new application using fly.toml template
     --app APP           Application name to use for deploy. Overrides one in toml file
-    --image             Mongo image to deploy (default: ${MONGO_IMAGE})
+    --envs              .env file to expose inside app container (default: ${ENVS})
+    --image             Mongo image to deploy (default: ${PYTHON_IMAGE})
     --allocate-ips      Allocate ip addresses on launch
     --debug             Set bash 'x' option
     --help              Show help message
@@ -34,7 +35,8 @@ EOF
 }
 
 SCRIPT_DIR=$(realpath "$(dirname "${0}")")
-MONGO_IMAGE=python:3.11-bookworm
+PYTHON_IMAGE=python:3.11-bookworm
+ENVS=prod.env
 
 while [ "${#}" -gt 0 ]; do
     case "${1}" in
@@ -54,7 +56,12 @@ while [ "${#}" -gt 0 ]; do
 
         --image)
             shift
-            MONGO_IMAGE="${1}"
+            PYTHON_IMAGE="${1}"
+            ;;
+
+        --envs)
+            shift
+            ENVS="${1}"
             ;;
 
         --allocate-ips)
@@ -96,8 +103,14 @@ if [ -n "${APP_NAME+x}" ]; then
     sed -i "s/app = \".*\"/app = \"${APP_NAME}\"/g" "${FLY_TOML_FN}"
 fi
 
+DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
+
+echo -e "\e[36mDeploying app, environment: ${ENVS}...\e[0m"
+
 if [ -n "${NEW+x}" ]; then
-    yes no | fly launch --copy-config --path /tmp --no-deploy --build-arg "BASE=${MONGO_IMAGE}"
+    yes no | fly launch --copy-config --path /tmp --no-deploy \
+        --build-arg "BASE=${PYTHON_IMAGE}" --build-arg "ENVS=${ENVS}" \
+        --dockerfile "${DOCKERFILE}" 
 
     if [ -n "${ALLOCATE_IPS+x}" ]; then
         fly ips allocate-v4 --shared
@@ -105,4 +118,5 @@ if [ -n "${NEW+x}" ]; then
     fi
 fi
 
-fly deploy --build-arg "BASE=${MONGO_IMAGE}"
+fly deploy --dockerfile "${DOCKERFILE}" \
+    --build-arg "BASE=${PYTHON_IMAGE}" --build-arg "ENVS=${ENVS}"

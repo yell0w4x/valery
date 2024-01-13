@@ -17,26 +17,10 @@ services:
 
   valery:
     container_name: valery
-    command: python3 -u /home/valery/app/main.py --log-level "${VALERY_LOG_LEVEL:-DEBUG}" --deps-log-level "${VALERY_DEPS_LOG_LEVEL:-WARNING}"
+    command: /home/valery/app/start.sh --log-level "${VALERY_LOG_LEVEL:-DEBUG}" --deps-log-level "${VALERY_DEPS_LOG_LEVEL:-WARNING}"
     restart: always
     build: "."
     # volumes:
     #   - ${VALERY_CONFIG_PATH:-./.volumes/valery}:/config
     depends_on:
       - mongo
-
-  # mongo_express:
-  #   container_name: mongo-express
-  #   image: mongo-express:latest
-  #   restart: always
-  #   ports:
-  #     - 127.0.0.1:${MONGO_EXPRESS_PORT:-8081}:${MONGO_EXPRESS_PORT:-8081}
-  #   environment:
-  #     - ME_CONFIG_MONGODB_SERVER=mongo
-  #     - ME_CONFIG_MONGODB_PORT=${MONGODB_PORT:-27017}
-  #     - ME_CONFIG_MONGODB_ENABLE_ADMIN=false
-  #     - ME_CONFIG_MONGODB_AUTH_DATABASE=valery
-  #     - ME_CONFIG_BASICAUTH_USERNAME=${MONGO_EXPRESS_USERNAME:-username}
-  #     - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_EXPRESS_PASSWORD:-password}
-  #   depends_on:
-  #     - mongo

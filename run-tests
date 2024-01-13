@@ -25,18 +25,24 @@ All the EXTRA_ARGS are passed to pytest
 
 Options:
     --debug-sh  Set bash 'x' option
+    --envs              .env file to expose inside app container (default: ${ENVS})
     --leave-db  Do not remove database on exit
     --help      Show help message
 EOF
 }
 
-# set -eux
+ENVS=test.env
 
 while [ "${#}" -gt 0 ]; do
     case "${1}" in
         -h|--help)
             usage
             exit
+            ;;
+
+        --envs)
+            shift
+            ENVS="${1}"
             ;;
 
         --debug-sh)
@@ -71,6 +77,7 @@ remove_container() {
         return
     fi
     REMOVED=1
+    popd &> /dev/null
 
     if [ -n "$(docker ps -qa --filter name=valery)" ]; then
         rm -rf "${ARTIFACTS_DIR}"
@@ -120,11 +127,8 @@ E2E_TESTS_DIR="${SCRIPT_DIR}/e2e-tests"
 E2E_IMAGE=e2e-test
 E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/e2e-tests.Dockerfile"
 
-pushd "${SCRIPT_DIR}"
+pushd "${SCRIPT_DIR}" &> /dev/null
 
 docker build -t "${E2E_IMAGE}:latest" -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
-docker compose build
-docker compose up -d
+"${SCRIPT_DIR}/run" --envs ${ENVS} --detach
 docker run --rm --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"
-
-popd

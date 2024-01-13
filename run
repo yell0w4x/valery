@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+
+usage() {
+cat << EOF
+Valery bot
+
+Run on this machine within specified environment
+
+Usage:
+    ${0} [OPTIONS]
+
+Options:
+    --envs        .env file to expose inside app container (default: ${ENVS})
+    --image       Mongo image to deploy (default: ${PYTHON_IMAGE})
+    --detach      Detach from containers
+    --stop        Stop containers
+    --remove      Remove containers on stop. If no --stop given and attached to containers.
+                  After containers stopped they are removed. 
+    --debug       Set bash 'x' option
+    --help        Show help message
+EOF
+}
+
+SCRIPT_DIR=$(realpath "$(dirname "${0}")")
+PYTHON_IMAGE=python:3.11-bookworm
+ENVS=test.env
+
+while [ "${#}" -gt 0 ]; do
+    case "${1}" in
+        -h|--help)
+            usage
+            exit
+            ;;
+
+        --envs)
+            shift
+            ENVS="${1}"
+            ;;
+
+        --image)
+            shift
+            PYTHON_IMAGE="${1}"
+            ;;
+
+        --detach)
+            DETACH=1
+            ;;
+
+        --remove)
+            REMOVE=1
+            ;;
+
+        --stop)
+            STOP=1
+            ;;
+
+        --debug)
+            set -x
+            ;;
+
+        *)
+            echo "Unreconginzed argument: ${1}"
+            usage
+            exit 1
+            ;;
+    esac
+    
+   shift
+done
+
+
+pushd "${SCRIPT_DIR}" &> /dev/null
+
+set -eEu
+
+on_exit() {
+    popd &> /dev/null
+
+    if [ -n "${REMOVE+x}" ] && [ -z "${DETACH+x}" ]; then
+        docker compose rm --force
+    fi
+}
+
+trap on_exit EXIT
+
+pushd &> /dev/null
+
+VOLUMES_DIR="${SCRIPT_DIR}/.volumes"
+MONGO_VOLUMES_DIR="${VOLUMES_DIR}/mongodb"
+
+if [ -n "${STOP+x}" ]; then
+    docker compose stop
+    
+    if [ -n "${REMOVE+x}" ]; then
+        docker compose rm --force
+    fi
+
+    exit 0
+fi
+
+echo -e "\e[36mRunning app, environment: ${ENVS}...\e[0m"
+mkdir -p "${MONGO_VOLUMES_DIR}"
+
+docker compose build --build-arg "BASE=${PYTHON_IMAGE}" --build-arg "ENVS=${ENVS}"
+if [ -n "${DETACH+x}" ]; then
+    docker compose up -d
+else 
+    docker compose up
+fi

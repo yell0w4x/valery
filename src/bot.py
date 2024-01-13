@@ -73,9 +73,7 @@ def escape_markdown(text):
 
 
 async def transcribe_audio(api_key, buffer, timeout):
-    from deepgram import DeepgramClientOptions
-
-    deepgram = DeepgramClient(api_key, config=DeepgramClientOptions(verbose=logging.DEBUG))
+    deepgram = DeepgramClient(api_key)
     options = PrerecordedOptions(
         model="nova-2",
         # model='whisper-medium',

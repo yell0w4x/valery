@@ -12,7 +12,7 @@ from os.path import realpath, abspath
 
 
 class Container(DeclarativeContainer):
-    config = Configuration()
+    config = Configuration(strict=True)
     repo = Singleton(Repository, mongodb_uri=config.mongodb_uri)
     tg_app_builder = Singleton(ApplicationBuilder)
     openai_client = Factory(openai.AsyncOpenAI, 

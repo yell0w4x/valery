@@ -18,6 +18,8 @@ COPY --chown=valery:valery src /home/valery/app/
 RUN cd /home/valery/app/tokenizer && npm install llama-tokenizer-js && node main.mjs --run-tests
 # RUN pytest
 COPY --chown=valery:valery config /home/valery/config/
+ARG ENVS=test.env
+ENV ENVS=${ENVS}
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["python", "-u", "/home/valery/app/main.py", "--log-level", "DEBUG", "--deps-log-level", "WARNING"]
+CMD ["/home/valery/app/start.sh", "--log-level", "DEBUG", "--deps-log-level", "WARNING"]
