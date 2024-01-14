@@ -1,3 +1,4 @@
+import operator
 import mongoengine
 # from pyromod import listen, Client as PyromodClient
 from pyrogram import Client, filters
@@ -97,13 +98,20 @@ async def test_help_command(telegram_client, chatbot_id, user_id):
 
 
 @pytest.mark.anyio
-async def test_must_response_to_user_message(telegram_client, chatbot_id):
+async def test_must_response_to_user_message(telegram_client, chatbot_id, user_id):
     message_arrived = expect_message(telegram_client)
     await telegram_client.send_message(chatbot_id, 'Hi there')
 
     message = await message_arrived
     message = await wait_for_placeholder_changes(telegram_client, message, chatbot_id)
-    assert message.text.startswith('Hello!') or message.text.startswith('Greetings!')
+    assert message.text.startswith(('Hello', 'Greetings', 'Hi there'))
+
+    user = User.objects.get(username=user_id)
+    assert user.stats.llm_total_tokens > 0
+    assert user.current_dialog[0].role == 'user'
+    assert user.current_dialog[0].content == 'Hi there'
+    assert user.current_dialog[1].role == 'assistant'
+    assert user.current_dialog[1].content == message.text
 
 
 @pytest.mark.anyio
@@ -188,8 +196,9 @@ async def test_must_forbid_to_select_chat_mode_if_message_pending(telegram_clien
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize('fn, expected', [('hi-there.oga', 'Hi there'), ('silence.ogg', '<Nothing>')])
-async def test_voice(telegram_client: Client, chatbot_id, user_id, fn, expected):
+@pytest.mark.parametrize('fn, expected, op', [('hi-there.oga', 'Hi there', operator.gt), 
+                                              ('silence.ogg', '<Nothing>', operator.eq)])
+async def test_voice(telegram_client: Client, chatbot_id, user_id, fn, expected, op):
     with open(fn, 'rb') as f:
         print(type(f), f.name)
         message_arrived = expect_message(telegram_client)
@@ -197,3 +206,7 @@ async def test_voice(telegram_client: Client, chatbot_id, user_id, fn, expected)
         message = await message_arrived
         assert expected in message.text
         await wait_for_message(telegram_client)
+
+        user = User.objects.get(username=user_id)
+        assert op(user.stats.llm_total_tokens, 0)
+        assert op(user.stats.transcription_secs, 0)

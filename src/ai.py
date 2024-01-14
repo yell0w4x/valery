@@ -79,7 +79,7 @@ class Assistant:
             **self.__completion_opts
         )
         _logger.debug(f'Reply from model: [{reply=}]')
-        response = reply.choices[0].message.content
+        response = reply.choices[0].message.content.strip()
         usage_stat = reply.usage
         return response, usage_stat
 
@@ -99,7 +99,7 @@ class Assistant:
             _logger.debug(f'{item=}')
             delta = item.choices[0].delta
             if hasattr(delta, 'content') and delta.content is not None:
-                yield delta.content
+                yield delta.content.strip()
                 # # n_input_tokens, n_output_tokens = self._count_tokens_from_messages(messages, answer, model=self.model)
                 # # n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
         else:

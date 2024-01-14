@@ -10,7 +10,7 @@ COPY e2e-tests/src/requirements.txt /test/requirements.txt
 RUN pip install -r requirements.txt
 COPY e2e-tests/src /test/
 # COPY config /config/
-COPY src/repository.py /test/
+COPY src/repository.py src/money.py src/money_field.py /test/
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["pytest"]

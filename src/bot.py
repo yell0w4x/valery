@@ -71,19 +71,13 @@ def escape_markdown(text):
 
     return text
 
-
-async def transcribe_audio(api_key, buffer, timeout):
-    deepgram = DeepgramClient(api_key)
-    options = PrerecordedOptions(
-        model="nova-2",
-        # model='whisper-medium',
-        smart_format=True,
-        language='en'
-        # summarize="v2",
-    )
+# fixme: figure out deepgram options
+async def transcribe_audio(api_key, buffer, timeout, **options):
     payload = dict(buffer=buffer)
-    # return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options, timeout=timeout)
-    return await deepgram.listen.asyncprerecorded.v('1').transcribe_file(payload, options)
+    client = DeepgramClient(api_key)    
+    resp = await client.listen.asyncprerecorded.v('1').transcribe_file(payload, PrerecordedOptions(**options), timeout=timeout)
+    _logger.debug(f'Voice transcription: [{resp=}]')
+    return resp.results.channels[0].alternatives[0].transcript.strip(), resp.metadata.duration
 
 
 PendingGuard = namedtuple('PendingGuard', ['lock', 'message_lock', 'messages'])
@@ -264,7 +258,11 @@ class Bot:
     @log_handler(_logger)
     @pending_protect
     async def __voice_message_handler(self, update: Update, context: CallbackContext):
-        self.__register_user(update.message.from_user)
+        def put_duration(user, duration):
+            user.stats.transcription_secs += duration
+            self.__repo.put_user(user)
+
+        user = self.__register_user(update.message.from_user)
 
         voice = update.message.voice
         voice_file = await context.bot.get_file(voice.file_id)
@@ -277,10 +275,12 @@ class Bot:
         _logger.debug(f'Got audio file: [{duration_seconds=} secs]')
 
         config = self.__config
-        response = await transcribe_audio(config['deepgram_token'], buf.read(), config['deepgram_timeout'])
-        _logger.debug(f'Voice transcription: [{response=}]')
-        text = str(response.results.channels[0].alternatives[0].transcript)
+        model = config['deepgram_model']
+        options = config['deepgram_models'][model]['options']
+        text, duration = await transcribe_audio(config['deepgram_token'], buf.read(), 
+                                                config['deepgram_timeout'], **options)
         if text:
+            put_duration(user, duration)
             await update.message.reply_text(f'🎙️ Got it\n{text}', parse_mode=ParseMode.HTML)
             await self.__handle_message(update, context, alt_text=text)
         else:
@@ -381,6 +381,10 @@ class Bot:
             user.current_dialog.append(Dialog(role='assistant', content=response))
             self.__repo.put_user(user)
 
+        def put_llm_stats(user, usage):
+            user.stats.llm_total_tokens += usage.total_tokens
+            self.__repo.put_user(user)
+
         assistant = self.__assistant_factory()
         config = self.__config
         parse_mode = self.__parse_mode(chat_mode)
@@ -429,6 +433,7 @@ class Bot:
         else:
             resp, usage = await assistant.send_message(message_text, message_history, chat_mode)
             put_dialog_item(user, message_text, resp)
+            put_llm_stats(user, usage)
 
             if is_markdown(parse_mode):
                 resp = escape_markdown(resp)

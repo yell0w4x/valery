@@ -1,3 +1,6 @@
+from money_field import MoneyField
+from money import Money
+
 from mongoengine import Document, StringField, IntField, DateField, \
     connect, EmbeddedDocumentField, EmbeddedDocument, ListField, FloatField
 import logging
@@ -13,7 +16,7 @@ class Dialog(EmbeddedDocument):
 
 class Stats(EmbeddedDocument):
     llm_total_tokens = IntField(default=0)
-    transcription_seconds = FloatField(default=0)
+    transcription_secs = FloatField(default=0)
     tts_total_tokens = IntField(default=0)
 
 
@@ -26,8 +29,8 @@ class User(Document):
     last_seen = DateField()
     chat_mode = StringField(default='english_tutor')
     current_dialog = ListField(EmbeddedDocumentField(Dialog))
-    usage = Stats()
-    limit = Stats()
+    stats = EmbeddedDocumentField(Stats, default=Stats())
+    balance = MoneyField(default=Money.ZERO)
 
 
 class Repository:
