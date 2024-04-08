@@ -1,4 +1,5 @@
 from repository import Dialog
+from money import Money
 
 from telegram.ext import (
     Application,
@@ -194,6 +195,18 @@ async def send_reply(text, message, parse_mode=None):
         _logger.warn(f'BadRequest: [{e!r}]', exc_info=e)
         for s in split_text(text.replace('\\', '') if is_markdown(parse_mode) else text):
             await message.reply_text(s)
+
+
+def deposit(user, amount, repo):
+    if not isinstance(amount, Money):
+        ValueError('Given amount must be an instance of Money type')
+
+    user.balance += amount
+    repo.put_user(user)
+
+
+def calc_transcribe_cost(duration, price):
+    pass    
 
 
 class Bot:

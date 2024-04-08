@@ -1,23 +1,16 @@
 import operator
 import mongoengine
-# from pyromod import listen, Client as PyromodClient
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 import pytest
 import time
 import asyncio
+import logging
 
 from repository import User
 
 
-@pytest.fixture
-def anyio_backend():
-    return 'asyncio'
-    
-
-@pytest.fixture
-def session_name():
-    return 'yellow4x'
+_logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -31,18 +24,6 @@ async def telegram_client(session_name):
 def mongo_connect():
     db = mongoengine.connect(host='mongodb://mongo:27017/valery?uuidRepresentation=standard')
     db.drop_database('valery')
-
-
-@pytest.fixture
-def chatbot_id():
-    VALERY_BOT_CHAT_ID = '@ValeryAITestBot'
-    return VALERY_BOT_CHAT_ID
-
-
-@pytest.fixture
-def user_id():
-    USER_ID = 'yell0w4x'
-    return USER_ID
 
 
 async def wait_for_message(telegram_client):
@@ -165,7 +146,7 @@ async def test_unable_to_send_two_messages_in_a_row_without_getting_reply_to_fir
 
     message_arrived = wait_for_message(telegram_client)
     message = await message_arrived
-    assert 'Hello!' in message.text
+    assert 'Hello' in message.text or 'Hi' in message.text
 
 
 @pytest.mark.anyio

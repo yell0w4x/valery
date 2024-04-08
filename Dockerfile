@@ -15,8 +15,7 @@ WORKDIR /home/valery/app
 COPY --chown=valery:valery src/requirements.txt /home/valery/app/requirements.txt
 RUN pip install -r requirements.txt
 COPY --chown=valery:valery src /home/valery/app/
-RUN cd /home/valery/app/tokenizer && npm install llama-tokenizer-js && node main.mjs --run-tests
-# RUN pytest
+RUN cd /home/valery/app/tokenizer && npm install llama-tokenizer-js@1.1.3 && node main.mjs --run-tests
 COPY --chown=valery:valery config /home/valery/config/
 ARG ENVS=test.env
 ENV ENVS=${ENVS}

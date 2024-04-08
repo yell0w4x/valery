@@ -24,10 +24,11 @@ Usage:
 All the EXTRA_ARGS are passed to pytest
 
 Options:
-    --debug-sh  Set bash 'x' option
-    --envs              .env file to expose inside app container (default: ${ENVS})
-    --leave-db  Do not remove database on exit
-    --help      Show help message
+    --debug-sh      Set bash 'x' option.
+    --envs          .env file to expose inside app container (default: ${ENVS}).
+    --leave-db      Do not remove database on exit.
+    --pytest-help   Pytest related help. See the 'Custom options' section.
+    --help          Show help message.
 EOF
 }
 
@@ -55,6 +56,11 @@ while [ "${#}" -gt 0 ]; do
 
         --leave-containers)
             LEAVE_CONTAINERS=1
+            ;;
+
+        --pytest-help)
+            PYTEST_HELP=1
+            ARGS+=(--help)
             ;;
 
         *)
@@ -130,5 +136,12 @@ E2E_TESTS_DOCKERFILE="${SCRIPT_DIR}/e2e-tests.Dockerfile"
 pushd "${SCRIPT_DIR}" &> /dev/null
 
 docker build -t "${E2E_IMAGE}:latest" -f "${E2E_TESTS_DOCKERFILE}" "${SCRIPT_DIR}"
-"${SCRIPT_DIR}/run" --envs ${ENVS} --detach
-docker run --rm --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"
+
+if [ -z "${PYTEST_HELP+x}" ]; then
+    "${SCRIPT_DIR}/run" --envs ${ENVS} --detach
+fi
+
+docker run --rm \
+    --env "VALERY_BOT_CHAT_ID=${VALERY_BOT_CHAT_ID:-}" \
+    --env "VALERY_BOT_SESSION_NAME=${VALERY_BOT_SESSION_NAME:-}" \
+    --network valery_default --name "${E2E_CONTAINER}" "${E2E_IMAGE}" pytest "${ARGS[@]}"

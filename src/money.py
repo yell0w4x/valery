@@ -34,14 +34,18 @@ class Money:
     def __add__(self, other):
         return Money(self._val + other._val)
 
+    def __iadd__(self, other):
+        self._val += other._val
+        return self
+
     def __sub__(self, other):
         return Money(self._val - other._val)
 
     def __mul__(self, val):
-        if isinstance(val, int):
-            return Money(self._val * val)
+        if isinstance(val, (int, float)):
+            return Money(int(self._val * val))
         else:
-            raise ValueError(f'Muliplactor [{val!r}] must be int')
+            raise ValueError(f'Multiplicator [{val!r}] must be int or float')
 
     def __floordiv__(self, val):
         if isinstance(val, int):

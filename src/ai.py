@@ -12,7 +12,7 @@ class AssistantError(RuntimeError):
     pass
 
 
-async def get_token_num(text):
+async def _get_token_num(text):
     process = await asyncio.create_subprocess_exec('node', 'tokenizer/main.mjs', 
                                                     stdin=asyncio.subprocess.PIPE, 
                                                     stdout=asyncio.subprocess.PIPE, 
@@ -26,7 +26,7 @@ async def get_token_num(text):
 
 
 async def _adapt_message_history(context_limit, prompt, message_history, message):
-    token_num = await get_token_num(prompt) + await get_token_num(message)
+    token_num = await _get_token_num(prompt) + await _get_token_num(message)
     total_tokens = token_num
     context_limit -= token_num
     if context_limit < 0:
@@ -40,7 +40,7 @@ async def _adapt_message_history(context_limit, prompt, message_history, message
     dialog = list()
     for item in zip(rmh[1::2], rmh[::2]):
         user, assistant = item
-        token_num = await get_token_num(assistant.content) + await get_token_num(user.content)
+        token_num = await _get_token_num(assistant.content) + await _get_token_num(user.content)
         if token_num > context_limit:
             break
         dialog += [to_dict(assistant), to_dict(user)]
