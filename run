@@ -12,7 +12,7 @@ Usage:
 
 Options:
     --envs        .env file to expose inside app container (default: ${ENVS})
-    --image       Mongo image to deploy (default: ${PYTHON_IMAGE})
+    --image       Docker image to use as base for the app (default: ${PYTHON_IMAGE})
     --detach      Detach from containers
     --stop        Stop containers
     --remove      Remove containers on stop. If no --stop given and attached to containers.

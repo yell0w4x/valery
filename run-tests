@@ -141,6 +141,12 @@ if [ -z "${PYTEST_HELP+x}" ]; then
     "${SCRIPT_DIR}/run" --envs ${ENVS} --detach
 fi
 
+NETWORK=valery_default
+
+if [ -z "$(docker network ls --filter "name=${NETWORK}" -q)" ]; then
+    docker network create "${NETWORK}"
+fi
+
 docker run --rm \
     --env "VALERY_BOT_CHAT_ID=${VALERY_BOT_CHAT_ID:-}" \
     --env "VALERY_BOT_SESSION_NAME=${VALERY_BOT_SESSION_NAME:-}" \
