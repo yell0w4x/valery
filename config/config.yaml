@@ -7,7 +7,7 @@ deepgram_timeout: 10
 message_streaming: false
 stream_update_chars: 100
 n_chat_modes_per_page: 5
-model: meta-llama/Meta-Llama-3-70B-Instruct
+model: meta-llama/Llama-2-70b-chat-hf
 models:
     meta-llama/Llama-2-70b-chat-hf:
         context_limit: 3096
