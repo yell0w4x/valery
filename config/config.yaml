@@ -7,7 +7,7 @@ deepgram_timeout: 10
 message_streaming: false
 stream_update_chars: 100
 n_chat_modes_per_page: 5
-model: meta-llama/Llama-2-70b-chat-hf
+model: meta-llama/Meta-Llama-3-70B-Instruct
 models:
     meta-llama/Llama-2-70b-chat-hf:
         context_limit: 3096
@@ -19,7 +19,16 @@ models:
             top_p: 1
             frequency_penalty: 0
             presence_penalty: 0
-
+    meta-llama/Meta-Llama-3-70B-Instruct:
+        context_limit: 7192
+        # token price in respect to denom
+        price: 1
+        completion_options:
+            temperature: 1
+            max_tokens: 1000
+            top_p: 1
+            frequency_penalty: 0
+            presence_penalty: 0
 
 deepgram_model: nova-2
 deepgram_models:

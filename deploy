@@ -5,7 +5,7 @@ usage() {
 cat << EOF
 Valery bot
 
-Fly.io based Valery bot deploy script
+Fly.io based Valery bot deploy script. Fly.io CLI is required.
 
 Usage:
     ${0} [OPTIONS]

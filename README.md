@@ -28,7 +28,7 @@ Then deploy your bot instance via `deploy` script.
 $ ./deploy --help
 Valery bot
 
-Fly.io based Valery bot deploy script
+Fly.io based Valery bot deploy script. Fly.io CLI is required.
 
 Usage:
     ./deploy [OPTIONS]
