@@ -42,7 +42,6 @@ HELP_MESSAGE = """Commands:
 👉 /start – Get started
 👉 /new – Start new dialog
 👉 /mode – Select chat mode
-👉 /cancel – Cancel pending reply 
 👉 /help – Show help
 
 🎤 You can send <b>Voice Messages</b> instead of text

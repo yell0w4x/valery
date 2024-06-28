@@ -3,7 +3,8 @@
     <img src="https://github.com/yell0w4x/assets/blob/215e53b298756a4c1d53e8ade38b34b46d05636a/valery.png" alt="Valery"/>
 </p>
 
-[@Valery](https://t.me/ValeryAIBot). 
+[@Valery](https://t.me/ValeryAIBot).
+
 To run own instance one needs to [create telegram bot](https://core.telegram.org/bots#how-do-i-create-a-bot). 
 Obtain [https://www.anyscale.com/platform](Anyscale) and 
 [https://deepgram.com](Deepgram) API token if speech recognition is necessary. 
