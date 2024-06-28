@@ -247,6 +247,10 @@ class Bot:
 
     async def __error_handler(self, update: Update, context: CallbackContext) -> None:
         _logger.error('Error has occurred', exc_info=context.error)
+        config = self.__config
+        if not config['debug']:
+            return
+
         if update.effective_chat is None:
             _logger.debug(f'Nothing to send to: [{update.effective_chat=}]')
             return
