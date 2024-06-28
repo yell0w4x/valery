@@ -53,13 +53,6 @@ async def _adapt_message_history(context_limit, prompt, message_history, message
 
 
 class Assistant:
-    SUPPORED_MODELS = 'meta-llama/Llama-2-70b-chat-hf',
-    COMPLETION_OPTIONS = dict(temperature=0.7, 
-                              max_tokens=1000, 
-                              top_p=1, 
-                              frequency_penalty=0, 
-                              presence_penalty=0)
-
     def __init__(self, client, config):
         self.__client = client
         self.__config = config
