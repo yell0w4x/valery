@@ -5,6 +5,14 @@
 
 [@ValeryAIBot](https://t.me/ValeryAIBot)
 
+Three modes are available.
+- English tutor
+- General assistant
+- Code assistant
+
+General assistant allows to setup timers in natural language like 'Remind me to trun off the stove in 20 minutes'.
+When timer is fired bot will send you a message containing text with reminded matter.
+
 To run own instance one needs to [create telegram bot](https://core.telegram.org/bots#how-do-i-create-a-bot). 
 Obtain [https://www.anyscale.com/platform](Anyscale) and 
 [https://deepgram.com](Deepgram) API token if speech recognition is necessary. 

@@ -25,7 +25,7 @@ import telegram
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
 from pydub import AudioSegment
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import asyncio
 from contextlib import contextmanager, asynccontextmanager
@@ -208,6 +208,14 @@ def calc_transcribe_cost(duration, price):
     pass    
 
 
+def is_command(text):
+    return text.startswith('command')
+
+
+def command_payload(text):
+    return json.loads(text[len('command'):].strip())
+
+
 class Bot:
     def __init__(self, config, telegram_app_builder, repository, assistant_factory):
         _logger.debug(f'Creating bot [{config=}]')
@@ -226,6 +234,7 @@ class Bot:
         self.__assistant_factory = assistant_factory
         self.__tasks = dict()
         self.__pending_guards = dict()
+        self.__timers = dict()
         self._register_user = self.__register_user
         app.add_handler(CommandHandler("start", self.__start_handler, filters=filters.COMMAND))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.__message_handler))
@@ -248,11 +257,18 @@ class Bot:
     async def __error_handler(self, update: Update, context: CallbackContext) -> None:
         _logger.error('Error has occurred', exc_info=context.error)
         config = self.__config
-        if not config['debug']:
-            return
 
         if update.effective_chat is None:
             _logger.debug(f'Nothing to send to: [{update.effective_chat=}]')
+            return
+
+        debug = config['debug']
+        if not debug:
+            try:
+                await context.bot.send_message(update.effective_chat.id, "Something went wrong")
+            except BaseException as e:
+                _logger.error('Error has occurred', exc_info=e)
+
             return
 
         try:
@@ -348,7 +364,7 @@ class Bot:
 
         _logger.debug(f'Message arrived: [{alt_text or update.message.text}, message.id={update.message.id if alt_text is None else None}]')
 
-        with (self.__reply_task(tg_user.id, update.message, user.current_dialog, user.chat_mode, alt_text) as reply_task, 
+        with (self.__reply_task(tg_user, update.message, user.current_dialog, user.chat_mode, alt_text) as reply_task, 
               self.__typing_task(update.message) as typing_task):
             try:
                 await asyncio.wait([reply_task, typing_task], return_when=asyncio.FIRST_COMPLETED)
@@ -372,9 +388,10 @@ class Bot:
 
 
     @contextmanager
-    def __reply_task(self, user_id, message, message_history, chat_mode, alt_text):
+    def __reply_task(self, tg_user, message, message_history, chat_mode, alt_text):
+        user_id = tg_user.id
         task = asyncio.create_task(self.__message_handler_task(
-            self.__repo.get_user(user_id), message, message_history, chat_mode, alt_text))
+            tg_user, message, message_history, chat_mode, alt_text))
         tasks = self.__tasks
         tasks[user_id] = task
         try:
@@ -391,7 +408,10 @@ class Bot:
                     markdown_v2=ParseMode.MARKDOWN_V2).get(config['chat_modes'][chat_mode]['parse_mode'], 
                                                            ParseMode.HTML)
 
-    async def __message_handler_task(self, user, message, message_history, chat_mode, alt_text):
+    async def __message_handler_task(self, tg_user, message, message_history, chat_mode, alt_text):
+        user_id = tg_user.id
+        user = self.__repo.get_user(user_id)
+
         def put_dialog_item(user, message_text, response):
             user.current_dialog.append(Dialog(role='user', content=message_text))
             user.current_dialog.append(Dialog(role='assistant', content=response))
@@ -456,13 +476,28 @@ class Bot:
 
             guard = self.__pending_guards[user.id]
             async with guard.message_lock:
-                await send_reply(resp, message, parse_mode)
+                if is_command(resp):
+                    payload = command_payload(resp)
+                    if 'timer' in payload:
+                        _logger.debug(f'Setting up timer: [{payload}]')
+                        timer = payload['timer']
+                        loop = asyncio.get_running_loop()
+                        fire_in = timedelta(seconds=timer['fire_in'])
+                        loop.call_later(fire_in.total_seconds(), asyncio.create_task, self.__timer_tracker_task(tg_user, timer))
+                        await send_reply(f'Timer is set up: {fire_in}', message)
+                else:
+                    await send_reply(resp, message, parse_mode)
 
 
     async def __bot_typing_task(self, message):
         while True:
             await message.reply_chat_action(action=ChatAction.TYPING)
             await asyncio.sleep(6)
+
+
+    async def __timer_tracker_task(self, user, timer):
+        _logger.debug(f'Fire timer: [{timer}]')
+        await user.send_message(f"Please don't forget about: {timer['text']}")
 
 
     def __register_user(self, tg_user):
@@ -476,7 +511,7 @@ class Bot:
         user = repo.get_user(tg_user.id)
         user.last_seen = now_utc
         if user.first_seen is None:
-            _logger.debug(f'Add new user')
+            _logger.debug('Add new user')
             user.first_seen = now_utc
             user.username = tg_user.username
             user.first_name=tg_user.first_name

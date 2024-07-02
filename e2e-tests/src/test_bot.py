@@ -191,3 +191,33 @@ async def test_voice(telegram_client: Client, chatbot_id, user_id, fn, expected,
         user = User.objects.get(username=user_id)
         assert op(user.stats.llm_total_tokens, 0)
         assert op(user.stats.transcription_secs, 0)
+
+
+@pytest.mark.anyio
+async def test_must_schedule_and_trigger_notification(telegram_client, chatbot_id, user_id):
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, '/mode')
+    message = await message_arrived
+    assert message.text.startswith('Select chat mode')
+
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.request_callback_answer(
+        chat_id=message.chat.id, message_id=message.id, callback_data='set_chat_mode|assistant')
+    message = await message_arrived
+    user = User.objects.get(username=user_id)
+    assert message.text.startswith("👩🏼‍🎓 Hi, I'm General Assistant")
+    assert user.chat_mode == 'assistant'
+
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, 'Hi')
+    message = await message_arrived
+    assert not message.text.startswith('Something went wrong')
+
+    message_arrived = expect_message(telegram_client)
+    await telegram_client.send_message(chatbot_id, 'Remind to make a call in 5 seconds')
+    message = await message_arrived
+    assert message.text.strip() == "Timer is set up: 0:00:05"
+
+    message_arrived = expect_message(telegram_client)
+    message = await message_arrived
+    assert message.text.startswith("Please don't forget about")
