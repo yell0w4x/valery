@@ -109,7 +109,7 @@ def pending_protect(method):
         _logger.debug(f'Processing message: [{message.id=}; {message.text=}; {len(guard.messages)=};]')
 
         with pending_message(guard, message) as lock:
-            _logger.debug(f'Penindg get IN: [{len(guard.messages)=}; {guard.messages=}]')
+            _logger.debug(f'Pending get IN: [{len(guard.messages)=}; {guard.messages=}]')
             if len(guard.messages) > 1:
                 async with guard.message_lock:
                     if update.callback_query is not None:
@@ -124,7 +124,7 @@ def pending_protect(method):
                 await method(self, update, *args, **kwargs)
                 _logger.debug(f'Exit method: [{method.__name__}]')
 
-        _logger.debug(f'Penindg get OUT: [{len(guard.messages)=}; {guard.messages=}]')
+        _logger.debug(f'Pending get OUT: [{len(guard.messages)=}; {guard.messages=}]')
 
     return pending_guard
 
@@ -258,8 +258,8 @@ class Bot:
         _logger.error('Error has occurred', exc_info=context.error)
         config = self.__config
 
-        if update.effective_chat is None:
-            _logger.debug(f'Nothing to send to: [{update.effective_chat=}]')
+        if update is None or update.effective_chat is None:
+            _logger.debug(f'Nothing to send to: [{update=}]')
             return
 
         debug = config['debug']
