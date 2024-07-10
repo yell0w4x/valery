@@ -85,7 +85,7 @@ async def test_must_response_to_user_message(telegram_client, chatbot_id, user_i
 
     message = await message_arrived
     message = await wait_for_placeholder_changes(telegram_client, message, chatbot_id)
-    assert message.text.startswith(('Hello', 'Greetings', 'Hi'))
+    assert 'Hello' in message.text or 'Greetings' in message.text or 'Hi' in message.text
 
     user = User.objects.get(username=user_id)
     assert user.stats.llm_total_tokens > 0

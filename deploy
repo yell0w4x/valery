@@ -119,4 +119,4 @@ if [ -n "${NEW+x}" ]; then
 fi
 
 fly deploy --dockerfile "${DOCKERFILE}" \
-    --build-arg "BASE=${PYTHON_IMAGE}" --build-arg "ENVS=${ENVS}"
+    --build-arg "BASE=${PYTHON_IMAGE}" --build-arg "ENVS=${ENVS}" --env "SWAP_ON=1"

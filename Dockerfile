@@ -2,12 +2,14 @@ ARG BASE=python:3.11-bookworm
 FROM "${BASE}"
 
 RUN apt-get update -y
-RUN apt-get install -y iproute2 htop ffmpeg nodejs npm
+RUN apt-get install -y iproute2 htop ffmpeg nodejs npm sudo
 RUN cd /tmp && wget https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_amd64.deb
 RUN apt-get install /tmp/dumb-init_1.2.5_amd64.deb
 
 RUN groupadd -r valery && \
-    useradd --uid 1000 -m -r -g valery -G audio,video,users -m valery
+    useradd --uid 1000 -m -r -g valery -G audio,video,users,sudo -m valery
+
+RUN echo 'valery ALL = (root) NOPASSWD: /usr/bin/fallocate -l 256M /swapfile,/usr/bin/chmod 600 /swapfile,/usr/sbin/mkswap /swapfile,/usr/sbin/swapon /swapfile,/usr/bin/tee /etc/fstab' > /etc/sudoers.d/valery
 
 USER valery
 
