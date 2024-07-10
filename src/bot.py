@@ -34,6 +34,7 @@ from functools import wraps
 import traceback
 import html
 import json
+import re
 from collections import namedtuple
 import markdown
 
@@ -209,11 +210,13 @@ def calc_transcribe_cost(duration, price):
 
 
 def is_command(text):
-    return text.startswith('command')
+    return 'command' in text and re.search(r'(\{.*\})', text)
 
 
 def command_payload(text):
-    return json.loads(text[len('command'):].strip())
+    m = re.search(r'(\{.*\})', text)
+    assert m is not None
+    return json.loads(m[0])
 
 
 class Bot:
@@ -484,7 +487,7 @@ class Bot:
                         loop = asyncio.get_running_loop()
                         fire_in = timedelta(seconds=timer['fire_in'])
                         loop.call_later(fire_in.total_seconds(), asyncio.create_task, self.__timer_tracker_task(tg_user, timer))
-                        await send_reply(f'Timer is set up: {fire_in}', message)
+                        await send_reply(f'⏰ Timer is set up: {fire_in}', message)
                 else:
                     await send_reply(resp, message, parse_mode)
 
@@ -497,7 +500,7 @@ class Bot:
 
     async def __timer_tracker_task(self, user, timer):
         _logger.debug(f'Fire timer: [{timer}]')
-        await user.send_message(f"Please don't forget about: {timer['text']}")
+        await user.send_message(f"⏰ Please don't forget about: {timer['text']}")
 
 
     def __register_user(self, tg_user):
