@@ -9,7 +9,7 @@ RUN apt-get install /tmp/dumb-init_1.2.5_amd64.deb
 RUN groupadd -r valery && \
     useradd --uid 1000 -m -r -g valery -G audio,video,users,sudo -m valery
 
-RUN echo 'valery ALL = (root) NOPASSWD: /usr/bin/fallocate -l 256M /swapfile,/usr/bin/chmod 600 /swapfile,/usr/sbin/mkswap /swapfile,/usr/sbin/swapon /swapfile,/usr/bin/tee /etc/fstab' > /etc/sudoers.d/valery
+RUN echo 'valery ALL = (root) NOPASSWD: /usr/bin/fallocate -l 256M /.fly-upper-layer/swapfile,/usr/bin/chmod 600 /.fly-upper-layer/swapfile,/usr/sbin/mkswap /.fly-upper-layer/swapfile,/usr/sbin/swapon /.fly-upper-layer/swapfile,/usr/bin/tee /etc/fstab' > /etc/sudoers.d/valery
 
 USER valery
 

@@ -10,7 +10,7 @@ Three modes are available.
 - General assistant
 - Code assistant
 
-General assistant allows to setup timers in natural language like 'Remind me to tunn off the stove in 20 minutes'.
+General assistant allows to setup timers in natural language like 'Remind me to turn off the stove in 20 minutes'.
 When timer is fired bot will send you a message containing text with reminded matter.
 
 To run own instance one needs to [create telegram bot](https://core.telegram.org/bots#how-do-i-create-a-bot). 
